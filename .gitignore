@@ -1,0 +1,43 @@
+# Backend
+backend/__pycache__/
+backend/*.pyc
+backend/.env
+backend/logs/
+backend/venv/
+backend/.vscode/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.vscode/
+
+# Data
+data/recordings/*
+data/models/*.pkl
+!data/models/.gitkeep
+
+# General
+.DS_Store
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Environment
+.env
+.env.local
