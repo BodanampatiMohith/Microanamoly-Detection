@@ -1,6 +1,34 @@
-# Microanomalies Detection System
+# Microanomaly Detection System
+
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
+[![Node.js](https://img.shields.io/badge/Node.js-16%2B-green.svg)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org)
+[![Flask](https://img.shields.io/badge/Flask-2.0%2B-red.svg)](https://flask.palletsprojects.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-grade full-stack web application for real-time machine micro-vibration analysis using **Eulerian Video Magnification (EVM)** and advanced anomaly detection.
+
+## 📋 Table of Contents
+
+- [🎯 Overview](#-overview)
+- [🏗️ Architecture](#️-architecture)
+- [🚀 Quick Start](#-quick-start)
+- [📊 System Behavior](#-system-behavior)
+- [🎨 UI Features](#-ui-features)
+- [🔬 EVM Pipeline](#-evm-pipeline)
+- [🤖 Anomaly Detection](#-anomaly-detection)
+- [📡 REST API Endpoints](#-rest-api-endpoints)
+- [🔧 Configuration](#-configuration)
+- [📊 Data Collection & Training](#-data-collection--training)
+- [🧪 Testing](#-testing)
+- [📦 Deployment](#-deployment)
+- [📈 Performance Notes](#-performance-notes)
+- [🔍 Troubleshooting](#-troubleshooting)
+- [📚 References](#-references)
+- [👨‍💻 Tech Stack](#-️-tech-stack)
+- [📝 License](#-license)
+- [🤝 Contributing](#-contributing)
+- [📧 Support](#-support)
 
 ## 🎯 Overview
 
@@ -439,5 +467,3 @@ For issues or questions, create a GitHub issue or contact the development team.
 ---
 
 **Built with ❤️ for precision micro-vibration analysis**
-#   M i c r o a n a m o l y - D e t e c t i o n  
- 
