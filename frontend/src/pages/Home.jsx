@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import VideoCapture from "../components/VideoCapture";
-import Dashboard from "../components/Dashboard";
-import RoiSelector from "../components/RoiSelector";
+import ProfessionalDashboard from "../components/ProfessionalDashboard";
 import { apiService } from "../services/api";
 
 export const Home = () => {
@@ -15,8 +14,17 @@ export const Home = () => {
   const [processResult, setProcessResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [rawVideoFrame, setRawVideoFrame] = useState(null);
   const [magnifiedFrame, setMagnifiedFrame] = useState(null);
   const [backendHealth, setBackendHealth] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [currentAmplification, setCurrentAmplification] = useState(20);
+  const [frequencyBand, setFrequencyBand] = useState({ low: 0.4, high: 100 });
+  const [waveformData, setWaveformData] = useState([]);
+  const [spectralData, setSpectralData] = useState([]);
+  
+  const waveformHistoryRef = useRef([]);
+  const spectralHistoryRef = useRef([]);
 
   // Check backend health on mount
   useEffect(() => {
@@ -32,7 +40,7 @@ export const Home = () => {
     };
 
     checkHealth();
-    const interval = setInterval(checkHealth, 5000); // Check every 5 seconds
+    const interval = setInterval(checkHealth, 5000);
 
     return () => clearInterval(interval);
   }, []);
@@ -46,9 +54,31 @@ export const Home = () => {
       setError(null);
 
       try {
+        // Set raw frame for display
+        if (typeof frameData === "string") {
+          setRawVideoFrame(frameData);
+        }
+
         const result = await apiService.processFrame(frameData, roi);
 
         setProcessResult(result);
+
+        // Update waveform data
+        if (result.features?.motion_signal) {
+          waveformHistoryRef.current = [
+            ...waveformHistoryRef.current,
+            ...result.features.motion_signal,
+          ].slice(-500);
+          setWaveformData([...waveformHistoryRef.current]);
+        }
+
+        // Update spectral data
+        if (result.features?.spectral_magnitude) {
+          spectralHistoryRef.current = result.features.spectral_magnitude;
+          setSpectralData([...spectralHistoryRef.current]);
+        }
+
+        // Update magnified frame
         if (result.magnified_frame) {
           setMagnifiedFrame(`data:image/jpeg;base64,${result.magnified_frame}`);
         }
@@ -62,12 +92,31 @@ export const Home = () => {
     [roi, backendHealth, isLoading]
   );
 
-  // Handle ROI change
-  const handleRoiChange = (newRoi) => {
-    setRoi(newRoi);
-    // Update backend
-    apiService.updateROI(newRoi).catch((err) => {
-      console.error("Error updating ROI:", err);
+  // Handle monitoring start
+  const handleStartMonitoring = () => {
+    setIsMonitoring(true);
+  };
+
+  // Handle monitoring stop
+  const handleStopMonitoring = () => {
+    setIsMonitoring(false);
+  };
+
+  // Handle amplification change
+  const handleAmplificationChange = (value) => {
+    setCurrentAmplification(value);
+    // Optionally send to backend
+    apiService.updateAmplification?.(value).catch((err) => {
+      console.error("Error updating amplification:", err);
+    });
+  };
+
+  // Handle frequency band change
+  const handleFrequencyBandChange = (newBand) => {
+    setFrequencyBand(newBand);
+    // Optionally send to backend
+    apiService.updateFrequencyBand?.(newBand).catch((err) => {
+      console.error("Error updating frequency band:", err);
     });
   };
 
@@ -76,118 +125,189 @@ export const Home = () => {
     try {
       await apiService.resetPipeline();
       setProcessResult(null);
+      setRawVideoFrame(null);
       setMagnifiedFrame(null);
       setError(null);
+      setIsMonitoring(false);
+      waveformHistoryRef.current = [];
+      spectralHistoryRef.current = [];
+      setWaveformData([]);
+      setSpectralData([]);
     } catch (err) {
       console.error("Error resetting pipeline:", err);
+      setError("Failed to reset system");
     }
   };
 
   return (
-    <div className="app-container">
-      <div className="background-grid" />
+    <div className="professional-app-container">
+      <style>
+        {`
+          .professional-app-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #0b0f1a 0%, #111827 100%);
+            color: #e4e6eb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+          }
+
+          .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: rgba(20, 30, 50, 0.4);
+            border-bottom: 1px solid rgba(0, 229, 255, 0.1);
+            flex-shrink: 0;
+          }
+
+          .app-header-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #00e5ff;
+          }
+
+          .app-header-subtitle {
+            font-size: 0.8rem;
+            color: #a0a9b8;
+            letter-spacing: 0.5px;
+            margin-top: 0.25rem;
+          }
+
+          .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+          }
+
+          .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            border-radius: 0.5rem;
+            font-size: 0.8rem;
+            color: #a0a9b8;
+          }
+
+          .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2ecc71;
+          }
+
+          .status-dot.disconnected {
+            background: #ff3b30;
+            animation: pulse-fault 1s ease-in-out infinite;
+          }
+
+          @keyframes pulse-fault {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+
+          .reset-btn {
+            padding: 0.6rem 1.2rem;
+            background: linear-gradient(135deg, #00e5ff, #1e90ff);
+            border: 1px solid #00e5ff;
+            border-radius: 0.5rem;
+            color: #0b0f1a;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+            transition: all 300ms ease;
+            text-transform: uppercase;
+          }
+
+          .reset-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 229, 255, 0.4);
+          }
+
+          .reset-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+          }
+
+          .error-banner {
+            padding: 1rem 2rem;
+            background: rgba(255, 59, 48, 0.15);
+            border-bottom: 2px solid #ff3b30;
+            color: #ff9999;
+            font-size: 0.9rem;
+            letter-spacing: 0.3px;
+          }
+
+          .app-content {
+            flex: 1;
+            overflow: hidden;
+          }
+        `}
+      </style>
 
       {/* Header */}
-      <header className="header">
-        <div className="header-title">μ-Vibration Anomaly Detector</div>
-        <div className="header-actions">
+      <header className="app-header">
+        <div>
+          <div className="app-header-title">
+            Webcam-Based Motion Magnification for Vibration Anomaly Detection
+          </div>
+          <div className="app-header-subtitle">Real-time Predictive Maintenance System</div>
+        </div>
+        <div className="header-controls">
+          <div className="status-badge">
+            <span className={`status-dot ${backendHealth ? "" : "disconnected"}`} />
+            <span>{backendHealth ? "Backend Connected" : "Backend Disconnected"}</span>
+          </div>
           <button
-            className="btn btn-primary"
+            className="reset-btn"
             onClick={handleReset}
             disabled={!backendHealth}
+            title="Reset all systems and clear data"
           >
             Reset System
           </button>
-          <div
-            style={{
-              fontSize: "0.85rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: backendHealth ? "var(--accent-teal)" : "var(--accent-red)",
-              }}
-            />
-            {backendHealth ? "Connected" : "Disconnected"}
-          </div>
         </div>
       </header>
 
+      {/* Error Banner */}
+      {error && (
+        <div className="error-banner">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
       {/* Main Content */}
-      <div className="main-content">
-        {/* Left: Video Feeds */}
-        <div className="video-section">
-          {/* Original Webcam Feed */}
-          <VideoCapture
-            onFrameCapture={handleFrameCapture}
-            roi={roi}
-            onRoiChange={handleRoiChange}
-          />
+      <div className="app-content">
+        <VideoCapture
+          onFrameCapture={handleFrameCapture}
+          rol={roi}
+          onRoiChange={setRoi}
+          isMonitoring={isMonitoring}
+        />
 
-          {/* Magnified EVM Feed */}
-          {magnifiedFrame && (
-            <div className="video-container">
-              <img
-                src={magnifiedFrame}
-                alt="Magnified Feed"
-                className="video-feed"
-              />
-              <div className="video-label magnified">Magnified EVM Feed</div>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Dashboard & Controls */}
-        <div className="dashboard-section">
-          {error && (
-            <div
-              style={{
-                padding: "1rem",
-                backgroundColor: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.5)",
-                borderRadius: "var(--radius-md)",
-                color: "var(--accent-red)",
-                fontSize: "0.9rem",
-              }}
-            >
-              ⚠️ {error}
-            </div>
-          )}
-
-          <Dashboard processResult={processResult} isLoading={isLoading} />
-
-          <RoiSelector roi={roi} onRoiChange={handleRoiChange} />
-        </div>
+        <ProfessionalDashboard
+          rawVideoFrame={rawVideoFrame}
+          magnifiedFrame={magnifiedFrame}
+          waveformData={waveformData}
+          spectralData={spectralData}
+          processResult={processResult}
+          isMonitoring={isMonitoring}
+          onStartMonitoring={handleStartMonitoring}
+          onStopMonitoring={handleStopMonitoring}
+          onAmplificationChange={handleAmplificationChange}
+          onFrequencyBandChange={handleFrequencyBandChange}
+          currentAmplification={currentAmplification}
+          frequencyBand={frequencyBand}
+        />
       </div>
-
-      {/* Footer */}
-      <footer className="footer">
-        <div className="footer-stats">
-          <div className="stat">
-            <span>🎬</span>
-            <span>
-              Frame: {processResult?.frame_index || 0}
-            </span>
-          </div>
-          <div className="stat">
-            <span>⏱️</span>
-            <span>
-              {processResult?.timestamp
-                ? new Date(processResult.timestamp).toLocaleTimeString()
-                : "Ready"}
-            </span>
-          </div>
-        </div>
-        <div style={{ fontSize: "0.75rem" }}>
-          Microanomalies Detection System v1.0 | Eulerian Video Magnification
-        </div>
-      </footer>
     </div>
   );
 };

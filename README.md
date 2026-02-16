@@ -98,7 +98,7 @@ Microanomalies-Detection/
 - **Node.js 16+**
 - Modern web browser with webcam support
 
-### Backend Setup
+### Backend Setup (Start First!)
 
 ```bash
 cd backend
@@ -110,13 +110,15 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Run server
+# Run Flask server
 python app.py
 ```
 
-Server runs on `http://localhost:5000`
+✅ Backend runs on **`http://localhost:5000`**
 
-### Frontend Setup
+> **IMPORTANT**: Start the backend FIRST before starting the frontend. The frontend cannot connect without it.
+
+### Frontend Setup (Start Second!)
 
 ```bash
 cd frontend
@@ -128,7 +130,7 @@ npm install
 npm run dev
 ```
 
-Frontend runs on `http://localhost:3000`
+✅ Frontend runs on **`http://localhost:5173`** (Vite default)
 
 ## 📊 System Behavior
 
@@ -334,9 +336,12 @@ python backend/src/anomaly/train_model.py \
 
 ### Manual Testing
 
-1. Run backend: `python backend/app.py`
-2. Run frontend: `npm run dev`
-3. Access: `http://localhost:3000`
+1. **Terminal 1** - Start backend: `cd backend && python app.py`
+   - Wait for: "Running on http://localhost:5000"
+2. **Terminal 2** - Start frontend: `cd frontend && npm run dev`
+   - Wait for: "Local: http://localhost:5173"
+3. **Browser** - Open: `http://localhost:5173`
+   - Check green status badge in header = Backend connected ✓
 4. Test with:
    - Normal operation (minimal vibration)
    - Artificially induced imbalance
@@ -402,6 +407,16 @@ Optimization tips:
 
 ## 🔍 Troubleshooting
 
+### "Backend Disconnected" Error in Dashboard
+```
+Error: Cannot connect to backend. Make sure Flask server is running.
+```
+**Solution**:
+1. Start Flask backend FIRST: `cd backend && python app.py`
+2. Wait for message: "Running on http://localhost:5000"
+3. Then start frontend: `cd frontend && npm run dev`
+4. Check green status badge appears in dashboard header
+
 ### Webcam not detected
 ```javascript
 // Check browser console for getUserMedia errors
@@ -409,10 +424,16 @@ Optimization tips:
 ```
 
 ### Backend connection failed
-```bash
-# Start backend with explicit host/port
-python app.py --host 0.0.0.0 --port 5000
-```
+- Verify backend is running on port 5000
+- Check: `http://localhost:5000/api/health` in browser
+- Should return: `{"status":"healthy"}`
+- If not, restart backend: `python backend/app.py`
+
+### Frontend not loading
+- Ensure you're on correct port: `http://localhost:5173`
+- NOT 3000 or 5000
+- Clear browser cache (Ctrl+Shift+Delete)
+- Restart frontend: `npm run dev`
 
 ### Slow processing
 - Reduce image resolution
