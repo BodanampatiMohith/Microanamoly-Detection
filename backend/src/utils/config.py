@@ -26,6 +26,18 @@ ANOMALY_CONFIG = {
     "frequency_reference": 10.0,  # Hz, expected normal freq
     "frequency_range": 5.0,  # Hz, detection range
     "normal_threshold": 0.6,  # Stability index threshold
+    "default_x": 100,  # Default ROI X coordinate
+    "default_y": 100,  # Default ROI Y coordinate
+    "default_width": 300,  # Default ROI width
+    "default_height": 200,  # Default ROI height
+}
+
+# API Configuration
+API_CONFIG = {
+    "max_frame_size_mb": 10,  # Maximum frame size in MB
+    "supported_formats": ["jpg", "jpeg", "png"],
+    "compression_quality": 85,  # JPEG compression quality
+    "rate_limit_per_minute": 60,  # API rate limiting
 }
 
 # Feature Extraction Configuration

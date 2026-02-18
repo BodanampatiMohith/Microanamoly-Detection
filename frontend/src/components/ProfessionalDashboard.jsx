@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import StabilityGauge from "./StabilityGauge";
 import WaveformChart from "./WaveformChart";
 import SpectrumAnalyzer from "./SpectrumAnalyzer";
@@ -19,13 +19,19 @@ export const ProfessionalDashboard = ({
 }) => {
   const [waveHistory, setWaveHistory] = useState([]);
   const [spectralHistory, setSpectralHistory] = useState([]);
+  const [performanceMetrics, setPerformanceMetrics] = useState({
+    fps: 0,
+    processingTime: 0,
+    frameCount: 0,
+  });
+  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
-  // Update waveform history
+  // Update waveform history with memory management
   useEffect(() => {
-    if (Array.isArray(waveformData)) {
+    if (Array.isArray(waveformData) && waveformData.length > 0) {
       setWaveHistory((prev) => {
         const updated = [...prev, ...waveformData];
-        return updated.slice(-500); // Keep last 500 samples
+        return updated.slice(-1000); // Keep last 1000 samples for better analysis
       });
     }
   }, [waveformData]);
@@ -37,28 +43,47 @@ export const ProfessionalDashboard = ({
     }
   }, [spectralData]);
 
-  // Calculate metrics from data
-  const calculateMetrics = () => {
+  // Performance monitoring
+  useEffect(() => {
+    if (processResult) {
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastUpdateTime;
+      const fps = timeDiff > 0 ? (1000 / timeDiff) : 0;
+      
+      setPerformanceMetrics({
+        fps: Math.round(fps * 10) / 10,
+        processingTime: processResult.processing_time_ms || 0,
+        frameCount: processResult.frame_index || 0,
+      });
+      
+      setLastUpdateTime(currentTime);
+    }
+  }, [processResult, lastUpdateTime]);
+
+  // Calculate metrics from data with memoization
+  const calculateMetrics = useCallback(() => {
     if (!processResult) return null;
 
+    const features = processResult.features || {};
+    const anomalyDetection = processResult.anomaly_detection || {};
+    
     const metrics = {
-      stabilityIndex:
-        (1 - (processResult.anomaly_index || 0)) * 100 || 75,
-      status: processResult.anomaly_detection?.status || "WAITING",
-      dominantFrequency:
-        processResult.features?.dominant_frequency || 0,
-      spectralEnergy:
-        processResult.features?.spectral_entropy || 0,
-      variance: processResult.features?.variance || 0,
-      rms: processResult.features?.rms || 0,
-      peakToPeak:
-        processResult.features?.peak_to_peak || 0,
+      stabilityIndex: (1 - (anomalyDetection.anomaly_index || 0)) * 100 || 75,
+      status: anomalyDetection.status || "WAITING",
+      dominantFrequency: features.dominant_frequency || 0,
+      spectralEnergy: features.spectral_entropy || 0,
+      variance: features.variance || 0,
+      rms: features.rms || 0,
+      peakToPeak: features.peak_to_peak || 0,
+      mean: features.mean || 0,
+      isNormal: anomalyDetection.is_normal ?? false,
+      anomalyIndex: anomalyDetection.anomaly_index || 0,
     };
 
     return metrics;
-  };
+  }, [processResult]);
 
-  const metrics = calculateMetrics();
+  const metrics = useMemo(() => calculateMetrics(), [calculateMetrics]);
 
   return (
     <div className="professional-dashboard">
@@ -97,7 +122,11 @@ export const ProfessionalDashboard = ({
                 </svg>
               </div>
             </div>
-            <div className="panel-footer">Frame rate: 30 FPS</div>
+            <div className="panel-footer">
+              Actual FPS: {performanceMetrics.fps} | 
+              Processing: {performanceMetrics.processingTime}ms | 
+              Frame: {performanceMetrics.frameCount}
+            </div>
           </div>
 
           {/* Motion Magnified Output */}

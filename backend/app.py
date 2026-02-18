@@ -22,6 +22,7 @@ from src.anomaly.rules import RuleBasedDetector
 from src.anomaly.model import MLAnomalyDetector
 from src.utils.roi import ROI, draw_roi_on_frame
 from src.utils.config import EVM_CONFIG, SIGNAL_CONFIG, ANOMALY_CONFIG, API_CONFIG
+from src.utils.error_handlers import enhanced_logger, validate_frame_data, timing_decorator, create_api_response
 
 # Setup logging
 logging.basicConfig(
@@ -106,6 +107,16 @@ def decode_base64_frame(frame_data: str) -> np.ndarray:
 
         # Decode image
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            logger.error("Failed to decode image - invalid image data")
+            return None
+            
+        # Validate frame dimensions
+        if frame.size == 0:
+            logger.error("Empty frame received")
+            return None
+            
         return frame
     except Exception as e:
         logger.error(f"Error decoding frame: {e}")
@@ -125,14 +136,28 @@ def encode_frame_to_base64(frame: np.ndarray, quality: int = 85) -> str:
     try:
         # Convert to 8-bit uint
         if frame.dtype == np.float32 or frame.dtype == np.float64:
+            frame = np.clip(frame, 0, 1)  # Ensure values are in valid range
             frame = (frame * 255).astype(np.uint8)
 
         # Convert to BGR if grayscale
         if len(frame.shape) == 2:
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        elif len(frame.shape) == 3 and frame.shape[2] == 4:
+            # Convert RGBA to BGR
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+
+        # Validate frame before encoding
+        if frame.size == 0:
+            logger.error("Empty frame provided for encoding")
+            return ""
 
         # Encode to JPEG
-        _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, quality, cv2.IMWRITE_JPEG_OPTIMIZE, 1]
+        _, buffer = cv2.imencode(".jpg", frame, encode_params)
+
+        if not _:
+            logger.error("Failed to encode frame to JPEG")
+            return ""
 
         # Encode to base64
         frame_base64 = base64.b64encode(buffer).decode("utf-8")
@@ -191,8 +216,9 @@ def handle_roi():
 
 
 @app.route("/api/process_frame", methods=["POST"])
+@timing_decorator(enhanced_logger)
 def process_frame():
-    """Process a single video frame through the pipeline.
+    """Process a single video frame through the pipeline with enhanced error handling.
 
     Expected JSON:
     {
@@ -200,17 +226,31 @@ def process_frame():
         "roi": {"x": 100, "y": 100, "width": 300, "height": 200}
     }
     """
+    start_time = datetime.now()
+    
     try:
         data = request.json
+        if not data:
+            return create_api_response(False, error="No JSON data provided", status_code=400)
 
-        # Decode input frame
+        # Validate and decode input frame
         frame_data = data.get("image")
         if not frame_data:
-            return jsonify({"error": "No image data provided"}), 400
+            return create_api_response(False, error="No image data provided", status_code=400)
+
+        # Enhanced frame validation
+        is_valid, error_msg = validate_frame_data(frame_data)
+        if not is_valid:
+            enhanced_logger.log_error("Frame validation failed", extra={"error": error_msg})
+            return create_api_response(False, error=f"Invalid frame data: {error_msg}", status_code=400)
 
         frame = decode_base64_frame(frame_data)
         if frame is None:
-            return jsonify({"error": "Failed to decode frame"}), 400
+            return create_api_response(False, error="Failed to decode frame - invalid image data", status_code=400)
+
+        # Validate frame dimensions
+        if frame.shape[0] < 50 or frame.shape[1] < 50:
+            return create_api_response(False, error="Frame too small - minimum 50x50 pixels required", status_code=400)
 
         # Update ROI if provided
         if "roi" in data:
@@ -246,11 +286,15 @@ def process_frame():
 
         pipeline_state.frame_count += 1
 
+        # Calculate processing time
+        processing_time = (datetime.now() - start_time).total_seconds() * 1000
+
         # Prepare response
         response = {
             "status": "success",
             "frame_index": pipeline_state.frame_count,
             "timestamp": datetime.now().isoformat(),
+            "processing_time_ms": round(processing_time, 2),
             # Magnified frame
             "magnified_frame": encode_frame_to_base64(magnified_frame),
             # ROI with box drawn
@@ -281,11 +325,14 @@ def process_frame():
             },
         }
 
-        return jsonify(response)
+        return create_api_response(True, data=response)
 
     except Exception as e:
-        logger.error(f"Error processing frame: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        enhanced_logger.log_error("Error processing frame", e, {
+            "frame_count": pipeline_state.frame_count,
+            "processing_time_ms": (datetime.now() - start_time).total_seconds() * 1000
+        })
+        return create_api_response(False, error=str(e), status_code=500)
 
 
 @app.route("/api/statistics", methods=["GET"])
