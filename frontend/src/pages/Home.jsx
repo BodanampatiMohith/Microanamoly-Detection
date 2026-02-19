@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import VideoCapture from "../components/VideoCapture";
 import ProfessionalDashboard from "../components/ProfessionalDashboard";
+import PerformanceMonitor from "../components/PerformanceMonitor";
 import { apiService } from "../services/api";
 
 export const Home = () => {
@@ -22,9 +23,18 @@ export const Home = () => {
   const [frequencyBand, setFrequencyBand] = useState({ low: 0.4, high: 100 });
   const [waveformData, setWaveformData] = useState([]);
   const [spectralData, setSpectralData] = useState([]);
+  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
   
   const waveformHistoryRef = useRef([]);
   const spectralHistoryRef = useRef([]);
+
+  // Handle performance updates from PerformanceMonitor
+  const handlePerformanceUpdate = useCallback((performanceMetrics) => {
+    // Could be used to adjust processing parameters based on performance
+    if (performanceMetrics.fps < 15) {
+      console.warn("Low FPS detected, consider reducing processing load");
+    }
+  }, []);
 
   // Check backend health on mount
   useEffect(() => {
@@ -180,8 +190,8 @@ export const Home = () => {
 
           .header-controls {
             display: flex;
+            gap: 1rem;
             align-items: center;
-            gap: 1.5rem;
           }
 
           .status-badge {
@@ -274,6 +284,13 @@ export const Home = () => {
           >
             Reset System
           </button>
+          <button
+            className="performance-btn"
+            onClick={() => setShowPerformanceMonitor(!showPerformanceMonitor)}
+            title="Toggle performance monitor"
+          >
+            📊 Performance
+          </button>
         </div>
       </header>
 
@@ -282,6 +299,14 @@ export const Home = () => {
         <div className="error-banner">
           <strong>Error:</strong> {error}
         </div>
+      )}
+
+      {/* Performance Monitor */}
+      {showPerformanceMonitor && (
+        <PerformanceMonitor
+          isVisible={showPerformanceMonitor}
+          onPerformanceUpdate={handlePerformanceUpdate}
+        />
       )}
 
       {/* Main Content */}

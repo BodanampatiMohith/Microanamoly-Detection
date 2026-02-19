@@ -4,6 +4,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles/index.css";
 import "./styles/dashboard.css";
 import "./styles/error-boundary.css";
+import "./styles/performance-monitor.css";
 
 function App() {
   return (

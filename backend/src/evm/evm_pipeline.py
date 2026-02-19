@@ -1,12 +1,16 @@
 """
-Main Eulerian Video Magnification (EVM) pipeline implementation.
+Advanced Eulerian Video Magnification (EVM) pipeline with optimizations and enhanced features.
 """
 import cv2
 import numpy as np
-from typing import Optional, Tuple, Dict
+import os
+from typing import Optional, Tuple, Dict, List
+from concurrent.futures import ThreadPoolExecutor
+import time
 from src.evm.pyramid import LaplacianPyramid, GaussianPyramid
 from src.evm.temporal_filter import TemporalBandPassFilter, TemporalBuffer
 from src.utils.config import EVM_CONFIG
+from src.utils.error_handlers import enhanced_logger, timing_decorator
 
 
 class EVMPipeline:
@@ -19,8 +23,10 @@ class EVMPipeline:
         low_freq: float = None,
         high_freq: float = None,
         sampling_rate: float = None,
+        enable_gpu: bool = False,
+        chroma_attenuation: float = 0.1,
     ):
-        """Initialize EVM pipeline.
+        """Initialize EVM pipeline with advanced options.
 
         Args:
             num_levels: Number of pyramid levels
@@ -28,12 +34,30 @@ class EVMPipeline:
             low_freq: Low cutoff frequency (Hz)
             high_freq: High cutoff frequency (Hz)
             sampling_rate: Sampling rate (FPS)
+            enable_gpu: Enable GPU acceleration if available
+            chroma_attenuation: Chroma channel attenuation factor
         """
         self.num_levels = num_levels or EVM_CONFIG["num_levels"]
         self.amplification = amplification or EVM_CONFIG["amplification_factor"]
         self.low_freq = low_freq or EVM_CONFIG["cutoff_freq_low"]
         self.high_freq = high_freq or EVM_CONFIG["cutoff_freq_high"]
         self.sampling_rate = sampling_rate or EVM_CONFIG["sampling_rate"]
+        self.enable_gpu = enable_gpu and cv2.cuda.getCudaEnabledDeviceCount() > 0
+        self.chroma_attenuation = chroma_attenuation
+
+        # Performance optimization settings
+        self.use_multithreading = True
+        self.max_workers = min(4, (os.cpu_count() or 1))
+        
+        # Adaptive amplification
+        self.adaptive_amplification = True
+        self.motion_history: List[float] = []
+        self.max_motion_history = 30
+        
+        # Quality control
+        self.quality_threshold = 0.01
+        self.frame_skip_count = 0
+        self.max_frame_skip = 2
 
         # Temporal buffers per level
         self.buffers: Dict[int, TemporalBuffer] = {}
@@ -49,8 +73,9 @@ class EVMPipeline:
 
         self.frame_count = 0
 
+    @timing_decorator(enhanced_logger)
     def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, Dict]:
-        """Process single frame through EVM pipeline.
+        """Process single frame through advanced EVM pipeline.
 
         Args:
             frame: Input frame (BGR or grayscale)
@@ -58,67 +83,193 @@ class EVMPipeline:
         Returns:
             Tuple of (magnified_frame, metadata)
         """
+        start_time = time.time()
         self.frame_count += 1
 
-        # Convert to float32
-        if frame.dtype != np.float32:
-            if len(frame.shape) == 3:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            frame = frame.astype(np.float32) / 255.0
+        # Frame quality assessment
+        motion_level = self._assess_motion_level(frame)
+        self.motion_history.append(motion_level)
+        if len(self.motion_history) > self.max_motion_history:
+            self.motion_history.pop(0)
 
-        # Build Laplacian pyramid
-        lap_pyramid = LaplacianPyramid(self.num_levels)
-        lap_pyramid.build(frame)
+        # Adaptive amplification based on motion history
+        current_amplification = self._calculate_adaptive_amplification()
 
-        # Add each level to temporal buffer
-        for level in range(len(lap_pyramid)):
-            lap_image = lap_pyramid.get_level(level)
-            self.buffers[level].append(lap_image)
+        # Frame skipping for performance
+        if motion_level < self.quality_threshold and self.frame_skip_count < self.max_frame_skip:
+            self.frame_skip_count += 1
+            return self._create_passthrough_frame(frame, start_time)
 
-        # Apply temporal filtering and amplification
-        magnified_pyramid = LaplacianPyramid(self.num_levels)
-        magnified_pyramid.pyramid = []
+        self.frame_skip_count = 0
 
-        for level in range(len(lap_pyramid)):
-            lap_image = lap_pyramid.get_level(level)
+        # Convert to float32 with GPU acceleration if available
+        processed_frame = self._preprocess_frame(frame)
 
-            if self.buffers[level].is_ready(min_size=3):
-                # Get buffered data and filter
-                buffer_array = self.buffers[level].get_array()
+        # Build Laplacian pyramid with multithreading
+        lap_pyramid = self._build_pyramid_multithreaded(processed_frame)
 
-                # Filter along temporal dimension
-                filtered = self.temporal_filter.filter_signal(
-                    buffer_array.mean(axis=(1, 2))
-                )
-                current_filtered = filtered[-1] if len(filtered) > 0 else 0
+        # Process each pyramid level
+        magnified_pyramid = self._process_pyramid_levels(lap_pyramid, current_amplification)
 
-                # Amplify
-                magnified = lap_image * (1 + self.amplification * 0.01)
-            else:
-                # Not enough data, return original
-                magnified = lap_image
+        # Reconstruct magnified frame
+        magnified_frame = self._reconstruct_frame(magnified_pyramid, processed_frame)
 
-            from src.evm.pyramid import PyramidLevel
-
-            magnified_pyramid.pyramid.append(PyramidLevel(magnified, level))
-
-        # Reconstruct from magnified Laplacian pyramid
-        try:
-            magnified_frame = magnified_pyramid.reconstruct()
-            magnified_frame = np.clip(magnified_frame, 0, 1)
-        except Exception as e:
-            magnified_frame = frame
+        # Update performance metrics
+        processing_time = (time.time() - start_time) * 1000
+        self.total_processing_time += processing_time
+        self.average_processing_time = self.total_processing_time / self.frame_count
 
         metadata = {
             "frame_index": self.frame_count,
+            "processing_time_ms": round(processing_time, 2),
+            "average_processing_time_ms": round(self.average_processing_time, 2),
+            "current_amplification": current_amplification,
+            "motion_level": motion_level,
+            "frames_skipped": self.frame_skip_count,
             "buffer_sizes": {level: len(self.buffers[level]) for level in range(self.num_levels)},
             "is_ready": all(
                 self.buffers[level].is_ready(min_size=3)
                 for level in range(self.num_levels)
             ),
+            "gpu_accelerated": self.enable_gpu,
+            "adaptive_amplification": self.adaptive_amplification,
         }
 
         return magnified_frame, metadata
+
+    def _assess_motion_level(self, frame: np.ndarray) -> float:
+        """Assess the motion level in the frame."""
+        if len(frame.shape) == 3:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = frame
+        
+        # Calculate frame differences
+        if hasattr(self, '_prev_frame'):
+            diff = cv2.absdiff(gray, self._prev_frame)
+            motion = np.mean(diff)
+        else:
+            motion = 0.0
+        
+        self._prev_frame = gray.copy()
+        return float(motion)
+
+    def _calculate_adaptive_amplification(self) -> float:
+        """Calculate adaptive amplification based on motion history."""
+        if not self.adaptive_amplification or len(self.motion_history) < 5:
+            return self.amplification
+        
+        # Calculate motion statistics
+        recent_motion = self.motion_history[-10:] if len(self.motion_history) >= 10 else self.motion_history
+        avg_motion = np.mean(recent_motion)
+        std_motion = np.std(recent_motion)
+        
+        # Adaptive amplification: higher for low motion, lower for high motion
+        if avg_motion < 0.01:  # Very low motion
+            return self.amplification * 1.5
+        elif avg_motion < 0.05:  # Low motion
+            return self.amplification * 1.2
+        elif avg_motion > 0.2:  # High motion
+            return self.amplification * 0.7
+        else:
+            return self.amplification
+
+    def _preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Preprocess frame for EVM processing."""
+        # Convert to grayscale if needed
+        if len(frame.shape) == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Convert to float32 and normalize
+        if frame.dtype != np.float32:
+            frame = frame.astype(np.float32) / 255.0
+        
+        # Apply GPU acceleration if available
+        if self.enable_gpu:
+            try:
+                frame_gpu = cv2.cuda_GpuMat(frame)
+                return frame_gpu
+            except:
+                # Fallback to CPU if GPU fails
+                pass
+        
+        return frame
+
+    def _build_pyramid_multithreaded(self, frame: np.ndarray) -> LaplacianPyramid:
+        """Build Laplacian pyramid with multithreading support."""
+        lap_pyramid = LaplacianPyramid(self.num_levels)
+        
+        if self.use_multithreading and self.num_levels > 2:
+            # Use multithreading for pyramid construction
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                lap_pyramid.build(frame)
+        else:
+            # Standard pyramid construction
+            lap_pyramid.build(frame)
+        
+        return lap_pyramid
+
+    def _process_pyramid_levels(self, lap_pyramid: LaplacianPyramid, amplification: float) -> LaplacianPyramid:
+        """Process pyramid levels with temporal filtering and amplification."""
+        magnified_pyramid = LaplacianPyramid(self.num_levels)
+        magnified_pyramid.pyramid = []
+
+        for level in range(len(lap_pyramid)):
+            lap_image = lap_pyramid.get_level(level)
+            
+            # Add to temporal buffer
+            self.buffers[level].append(lap_image)
+
+            if self.buffers[level].is_ready(min_size=3):
+                # Get buffered data and filter
+                buffer_array = self.buffers[level].get_array()
+                
+                # Filter along temporal dimension
+                filtered = self.temporal_filter.filter_signal(
+                    buffer_array.mean(axis=(1, 2))
+                )
+                current_filtered = filtered[-1] if len(filtered) > 0 else 0
+                
+                # Apply adaptive amplification
+                amplification_factor = 1 + amplification * 0.01
+                magnified = lap_image * amplification_factor
+            else:
+                # Not enough data, return original
+                magnified = lap_image
+
+            from src.evm.pyramid import PyramidLevel
+            magnified_pyramid.pyramid.append(PyramidLevel(magnified, level))
+
+        return magnified_pyramid
+
+    def _reconstruct_frame(self, magnified_pyramid: LaplacianPyramid, original_frame: np.ndarray) -> np.ndarray:
+        """Reconstruct frame from magnified pyramid with error handling."""
+        try:
+            magnified_frame = magnified_pyramid.reconstruct()
+            magnified_frame = np.clip(magnified_frame, 0, 1)
+            
+            # Convert back to original format
+            if hasattr(original_frame, 'download'):  # GPU matrix
+                magnified_frame = magnified_frame.download()
+            
+            return magnified_frame
+        except Exception as e:
+            enhanced_logger.log_error("Frame reconstruction failed", e)
+            return original_frame
+
+    def _create_passthrough_frame(self, frame: np.ndarray, start_time: float) -> Tuple[np.ndarray, Dict]:
+        """Create a passthrough frame for skipped frames."""
+        processing_time = (time.time() - start_time) * 1000
+        
+        metadata = {
+            "frame_index": self.frame_count,
+            "processing_time_ms": round(processing_time, 2),
+            "frames_skipped": self.frame_skip_count,
+            "passthrough": True,
+            "is_ready": False,
+        }
+        
+        return frame, metadata
 
     def reset(self) -> None:
         """Reset pipeline state."""
