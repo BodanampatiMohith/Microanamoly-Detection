@@ -244,6 +244,12 @@ GET /api/roi                  # Get current ROI
 POST /api/roi                 # Update ROI
 POST /api/process_frame       # Process video frame
 GET /api/statistics           # Get pipeline stats
+GET /api/monitoring/summary   # 24/7 monitoring summary
+GET /api/monitoring/history   # Recent frame-level telemetry for charts
+GET /api/monitoring/window    # Rolling-window telemetry (?minutes=60)
+GET /api/monitoring/aggregate # Minute aggregates (?hours=24)
+GET /api/runtime/evm          # Read live EVM runtime params
+POST /api/runtime/evm         # Update live EVM runtime params
 POST /api/reset               # Reset pipeline
 ```
 
@@ -260,6 +266,7 @@ POST /api/reset               # Reset pipeline
 **Response:**
 ```json
 {
+  "success": true,
   "status": "success",
   "frame_index": 42,
   "timestamp": "2024-01-15T10:30:45.123Z",

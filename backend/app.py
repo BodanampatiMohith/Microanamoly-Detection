@@ -2,12 +2,10 @@
 Main Flask application for Microanomalies Detection System.
 """
 import os
-import sys
 import logging
 import base64
 import cv2
 import numpy as np
-from io import BytesIO
 from datetime import datetime
 from typing import Tuple, Dict
 
@@ -20,8 +18,9 @@ from src.signal.motion_signal import MotionSignalExtractor
 from src.signal.features import FeatureExtractor
 from src.anomaly.rules import RuleBasedDetector
 from src.anomaly.model import MLAnomalyDetector
+from src.monitoring.telemetry import TelemetryStore
 from src.utils.roi import ROI, draw_roi_on_frame
-from src.utils.config import EVM_CONFIG, SIGNAL_CONFIG, ANOMALY_CONFIG, API_CONFIG
+from src.utils.config import EVM_CONFIG, SIGNAL_CONFIG, ANOMALY_CONFIG, API_CONFIG, MONITORING_CONFIG
 from src.utils.error_handlers import enhanced_logger, validate_frame_data, timing_decorator, create_api_response
 
 # Setup logging
@@ -63,6 +62,10 @@ class PipelineState:
         self.frame_count = 0
         self.features_history = []
         self.max_history = 100
+        self.telemetry_store = TelemetryStore(
+            raw_history_size=MONITORING_CONFIG.get("raw_history_size", 50000),
+            aggregate_history_minutes=MONITORING_CONFIG.get("aggregate_history_minutes", 60 * 24 * 7),
+        )
 
     def update_roi(self, roi_dict: Dict) -> None:
         """Update ROI coordinates.
@@ -78,6 +81,7 @@ class PipelineState:
         self.motion_extractor.clear()
         self.frame_count = 0
         self.features_history = []
+        self.telemetry_store.clear()
 
 
 # Initialize state
@@ -191,6 +195,7 @@ def get_config():
             "signal": SIGNAL_CONFIG,
             "anomaly": ANOMALY_CONFIG,
             "api": API_CONFIG,
+            "monitoring": MONITORING_CONFIG,
         }
     )
 
@@ -258,6 +263,8 @@ def process_frame():
 
         # Extract ROI region
         roi_frame = pipeline_state.roi.extract(frame)
+        if roi_frame is None or roi_frame.size == 0:
+            return create_api_response(False, error="ROI is outside frame bounds", status_code=400)
 
         # Process through EVM pipeline
         magnified_frame, evm_meta = pipeline_state.evm_pipeline.process_frame(roi_frame)
@@ -296,9 +303,14 @@ def process_frame():
             "timestamp": datetime.now().isoformat(),
             "processing_time_ms": round(processing_time, 2),
             # Magnified frame
-            "magnified_frame": encode_frame_to_base64(magnified_frame),
+            "magnified_frame": encode_frame_to_base64(
+                magnified_frame, quality=API_CONFIG.get("jpeg_quality", 85)
+            ),
             # ROI with box drawn
-            "roi_frame": encode_frame_to_base64(draw_roi_on_frame(frame, pipeline_state.roi)),
+            "roi_frame": encode_frame_to_base64(
+                draw_roi_on_frame(frame, pipeline_state.roi),
+                quality=API_CONFIG.get("jpeg_quality", 85),
+            ),
             # Anomaly detection results
             "anomaly_detection": {
                 "status": status,
@@ -312,8 +324,10 @@ def process_frame():
                 "available": pipeline_state.ml_detector is not None,
             },
             # Extracted features
-            "features": {k: float(v) if isinstance(v, (int, float, np.number)) else v
-                        for k, v in features.items()},
+            "features": {
+                k: float(v) if isinstance(v, (int, float, np.number)) else v
+                for k, v in features.items()
+            },
             # EVM metadata
             "evm_meta": evm_meta,
             # Signal statistics
@@ -325,7 +339,28 @@ def process_frame():
             },
         }
 
-        return create_api_response(True, data=response)
+        # Persist telemetry for monitoring graphs and long-running summaries.
+        pipeline_state.telemetry_store.add_sample(
+            {
+                "timestamp": response["timestamp"],
+                "frame_index": response["frame_index"],
+                "status": response["anomaly_detection"]["status"],
+                "anomaly_index": response["anomaly_detection"]["anomaly_index"],
+                "processing_time_ms": response["processing_time_ms"],
+                "dominant_frequency": response["features"].get("dominant_frequency", 0.0),
+                "rms": response["features"].get("rms", 0.0),
+                "variance": response["features"].get("variance", 0.0),
+                "peak_to_peak": response["features"].get("peak_to_peak", 0.0),
+                "spectral_entropy": response["features"].get("spectral_entropy", 0.0),
+                "motion_value": response["motion_signal"]["current_value"],
+                "evm_amplification": response["evm_meta"].get("current_amplification", 0.0),
+            }
+        )
+
+        # Keep direct fields (legacy clients) and a nested `data` object (new clients).
+        compat_response = {"success": True, "data": response}
+        compat_response.update(response)
+        return jsonify(compat_response)
 
     except Exception as e:
         enhanced_logger.log_error("Error processing frame", e, {
@@ -345,11 +380,114 @@ def get_statistics():
                 "motion_buffer_size": len(pipeline_state.motion_extractor.motion_buffer),
                 "features_history_size": len(pipeline_state.features_history),
                 "evm_stats": pipeline_state.evm_pipeline.get_statistics(),
+                "monitoring_summary": pipeline_state.telemetry_store.get_summary(),
             }
         )
     except Exception as e:
         logger.error(f"Error getting statistics: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/monitoring/summary", methods=["GET"])
+def get_monitoring_summary():
+    """Get current long-running monitoring summary."""
+    try:
+        return jsonify(
+            {
+                "status": "success",
+                "summary": pipeline_state.telemetry_store.get_summary(),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting monitoring summary: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/monitoring/history", methods=["GET"])
+def get_monitoring_history():
+    """Get recent frame-level telemetry points for graph rendering."""
+    try:
+        points = request.args.get("points", MONITORING_CONFIG.get("default_history_points", 500), type=int)
+        history = pipeline_state.telemetry_store.get_recent(points=points)
+        return jsonify(
+            {
+                "status": "success",
+                "points": len(history),
+                "history": history,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting monitoring history: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/monitoring/window", methods=["GET"])
+def get_monitoring_window():
+    """Get telemetry points for a rolling window in minutes."""
+    try:
+        minutes = request.args.get("minutes", MONITORING_CONFIG.get("default_window_minutes", 60), type=int)
+        window = pipeline_state.telemetry_store.get_window(minutes=minutes)
+        return jsonify(
+            {
+                "status": "success",
+                "minutes": minutes,
+                "points": len(window),
+                "history": window,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting monitoring window: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/monitoring/aggregate", methods=["GET"])
+def get_monitoring_aggregate():
+    """Get minute-level aggregate telemetry for long-range 24/7 trend graphs."""
+    try:
+        hours = request.args.get("hours", 24, type=int)
+        aggregate = pipeline_state.telemetry_store.get_minute_aggregates(hours=hours)
+        return jsonify(
+            {
+                "status": "success",
+                "hours": hours,
+                "points": len(aggregate),
+                "aggregate": aggregate,
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting monitoring aggregate: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/runtime/evm", methods=["GET", "POST"])
+def handle_runtime_evm():
+    """Get or update runtime EVM parameters without restarting the backend."""
+    try:
+        if request.method == "GET":
+            return jsonify(
+                {
+                    "status": "success",
+                    "evm": {
+                        "amplification_factor": pipeline_state.evm_pipeline.amplification,
+                        "cutoff_freq_low": pipeline_state.evm_pipeline.low_freq,
+                        "cutoff_freq_high": pipeline_state.evm_pipeline.high_freq,
+                        "sampling_rate": pipeline_state.evm_pipeline.sampling_rate,
+                    },
+                }
+            )
+
+        data = request.json or {}
+        updated = pipeline_state.evm_pipeline.update_parameters(
+            amplification=data.get("amplification_factor"),
+            low_freq=data.get("cutoff_freq_low"),
+            high_freq=data.get("cutoff_freq_high"),
+            sampling_rate=data.get("sampling_rate"),
+        )
+
+        return jsonify({"status": "success", "evm": updated})
+    except Exception as e:
+        logger.error(f"Error handling runtime EVM config: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 
 @app.route("/api/reset", methods=["POST"])

@@ -1,8 +1,6 @@
-"""
-Configuration module for the microanomalies detection system.
-"""
+"""Configuration module for the microanomalies detection system."""
 
-# EVM Configuration
+# EVM configuration
 EVM_CONFIG = {
     "num_levels": 4,
     "amplification_factor": 20,
@@ -12,35 +10,27 @@ EVM_CONFIG = {
     "temporal_buffer_size": 60,  # frames
 }
 
-# Signal Processing Configuration
+# Signal processing configuration
 SIGNAL_CONFIG = {
-    "window_size": 60,  # Samples
-    "hop_size": 15,  # Samples
+    "window_size": 60,  # samples
+    "hop_size": 15,  # samples
     "motion_threshold": 1e-6,
 }
 
-# Anomaly Detection Configuration (Rule-based)
+# Anomaly detection configuration (rule-based)
 ANOMALY_CONFIG = {
-    "rms_reference": 0.5,  # Normal baseline
-    "rms_range": 2.0,  # Detection range
-    "frequency_reference": 10.0,  # Hz, expected normal freq
+    "rms_reference": 0.5,  # normal baseline
+    "rms_range": 2.0,  # detection range
+    "frequency_reference": 10.0,  # Hz, expected normal frequency
     "frequency_range": 5.0,  # Hz, detection range
-    "normal_threshold": 0.6,  # Stability index threshold
-    "default_x": 100,  # Default ROI X coordinate
-    "default_y": 100,  # Default ROI Y coordinate
-    "default_width": 300,  # Default ROI width
-    "default_height": 200,  # Default ROI height
+    "normal_threshold": 0.6,  # stability index threshold
+    "default_x": 100,
+    "default_y": 100,
+    "default_width": 300,
+    "default_height": 200,
 }
 
-# API Configuration
-API_CONFIG = {
-    "max_frame_size_mb": 10,  # Maximum frame size in MB
-    "supported_formats": ["jpg", "jpeg", "png"],
-    "compression_quality": 85,  # JPEG compression quality
-    "rate_limit_per_minute": 60,  # API rate limiting
-}
-
-# Feature Extraction Configuration
+# Feature extraction configuration
 FEATURES_CONFIG = {
     "energy_bands": [
         {"name": "low", "min": 0, "max": 5},
@@ -49,15 +39,27 @@ FEATURES_CONFIG = {
     ],
 }
 
-# API Configuration
+# API configuration
 API_CONFIG = {
+    "max_frame_size_mb": 10,
+    "supported_formats": ["jpg", "jpeg", "png"],
+    "compression_quality": 85,
+    "rate_limit_per_minute": 60,
     "max_frame_width": 640,
     "max_frame_height": 480,
     "jpeg_quality": 85,
     "frame_timeout_ms": 5000,
 }
 
-# ROI Configuration
+# Monitoring and telemetry history configuration
+MONITORING_CONFIG = {
+    "raw_history_size": 50000,  # recent frame-level telemetry points
+    "aggregate_history_minutes": 60 * 24 * 7,  # keep one week of minute buckets
+    "default_window_minutes": 60,
+    "default_history_points": 500,
+}
+
+# ROI configuration
 ROI_CONFIG = {
     "default_x": 100,
     "default_y": 100,
@@ -67,7 +69,7 @@ ROI_CONFIG = {
     "min_height": 50,
 }
 
-# Logging Configuration
+# Logging configuration
 LOG_CONFIG = {
     "level": "INFO",
     "file": "logs/app.log",

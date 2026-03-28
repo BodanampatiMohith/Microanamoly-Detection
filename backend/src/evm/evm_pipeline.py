@@ -3,11 +3,9 @@ Advanced Eulerian Video Magnification (EVM) pipeline with optimizations and enha
 """
 import cv2
 import numpy as np
-import os
-from typing import Optional, Tuple, Dict, List
-from concurrent.futures import ThreadPoolExecutor
+from typing import Tuple, Dict, List
 import time
-from src.evm.pyramid import LaplacianPyramid, GaussianPyramid
+from src.evm.pyramid import LaplacianPyramid
 from src.evm.temporal_filter import TemporalBandPassFilter, TemporalBuffer
 from src.utils.config import EVM_CONFIG
 from src.utils.error_handlers import enhanced_logger, timing_decorator
@@ -45,10 +43,6 @@ class EVMPipeline:
         self.enable_gpu = enable_gpu and cv2.cuda.getCudaEnabledDeviceCount() > 0
         self.chroma_attenuation = chroma_attenuation
 
-        # Performance optimization settings
-        self.use_multithreading = True
-        self.max_workers = min(4, (os.cpu_count() or 1))
-        
         # Adaptive amplification
         self.adaptive_amplification = True
         self.motion_history: List[float] = []
@@ -58,6 +52,7 @@ class EVMPipeline:
         self.quality_threshold = 0.01
         self.frame_skip_count = 0
         self.max_frame_skip = 2
+        self.skipped_frames_total = 0
 
         # Temporal buffers per level
         self.buffers: Dict[int, TemporalBuffer] = {}
@@ -72,6 +67,8 @@ class EVMPipeline:
         )
 
         self.frame_count = 0
+        self.total_processing_time = 0.0
+        self.average_processing_time = 0.0
 
     @timing_decorator(enhanced_logger)
     def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, Dict]:
@@ -98,7 +95,15 @@ class EVMPipeline:
         # Frame skipping for performance
         if motion_level < self.quality_threshold and self.frame_skip_count < self.max_frame_skip:
             self.frame_skip_count += 1
-            return self._create_passthrough_frame(frame, start_time)
+            self.skipped_frames_total += 1
+            passthrough_frame, metadata = self._create_passthrough_frame(
+                frame, start_time, current_amplification, motion_level
+            )
+            self._update_timing_stats(metadata["processing_time_ms"])
+            metadata["average_processing_time_ms"] = round(self.average_processing_time, 2)
+            metadata["gpu_accelerated"] = self.enable_gpu
+            metadata["adaptive_amplification"] = self.adaptive_amplification
+            return passthrough_frame, metadata
 
         self.frame_skip_count = 0
 
@@ -116,8 +121,7 @@ class EVMPipeline:
 
         # Update performance metrics
         processing_time = (time.time() - start_time) * 1000
-        self.total_processing_time += processing_time
-        self.average_processing_time = self.total_processing_time / self.frame_count
+        self._update_timing_stats(processing_time)
 
         metadata = {
             "frame_index": self.frame_count,
@@ -136,6 +140,12 @@ class EVMPipeline:
         }
 
         return magnified_frame, metadata
+
+    def _update_timing_stats(self, processing_time_ms: float) -> None:
+        """Update cumulative timing metrics."""
+        self.total_processing_time += float(processing_time_ms)
+        processed_frames = max(1, self.frame_count)
+        self.average_processing_time = self.total_processing_time / processed_frames
 
     def _assess_motion_level(self, frame: np.ndarray) -> float:
         """Assess the motion level in the frame."""
@@ -162,7 +172,6 @@ class EVMPipeline:
         # Calculate motion statistics
         recent_motion = self.motion_history[-10:] if len(self.motion_history) >= 10 else self.motion_history
         avg_motion = np.mean(recent_motion)
-        std_motion = np.std(recent_motion)
         
         # Adaptive amplification: higher for low motion, lower for high motion
         if avg_motion < 0.01:  # Very low motion
@@ -184,29 +193,18 @@ class EVMPipeline:
         if frame.dtype != np.float32:
             frame = frame.astype(np.float32) / 255.0
         
-        # Apply GPU acceleration if available
-        if self.enable_gpu:
-            try:
-                frame_gpu = cv2.cuda_GpuMat(frame)
-                return frame_gpu
-            except:
-                # Fallback to CPU if GPU fails
-                pass
-        
+        # Keep CPU path as default for reliability in long-running sessions.
+        # The current pipeline operators work on numpy arrays.
         return frame
 
     def _build_pyramid_multithreaded(self, frame: np.ndarray) -> LaplacianPyramid:
         """Build Laplacian pyramid with multithreading support."""
         lap_pyramid = LaplacianPyramid(self.num_levels)
-        
-        if self.use_multithreading and self.num_levels > 2:
-            # Use multithreading for pyramid construction
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                lap_pyramid.build(frame)
-        else:
-            # Standard pyramid construction
-            lap_pyramid.build(frame)
-        
+
+        # Current pyramid implementation is internally sequential.
+        # Keep this path deterministic for long-running monitoring.
+        lap_pyramid.build(frame)
+
         return lap_pyramid
 
     def _process_pyramid_levels(self, lap_pyramid: LaplacianPyramid, amplification: float) -> LaplacianPyramid:
@@ -223,15 +221,16 @@ class EVMPipeline:
             if self.buffers[level].is_ready(min_size=3):
                 # Get buffered data and filter
                 buffer_array = self.buffers[level].get_array()
-                
+
                 # Filter along temporal dimension
                 filtered = self.temporal_filter.filter_signal(
                     buffer_array.mean(axis=(1, 2))
                 )
                 current_filtered = filtered[-1] if len(filtered) > 0 else 0
-                
-                # Apply adaptive amplification
-                amplification_factor = 1 + amplification * 0.01
+
+                # Apply adaptive amplification modulated by recent temporal trend.
+                temporal_gain = float(np.tanh(current_filtered))
+                amplification_factor = 1 + (amplification * 0.01 * (1 + temporal_gain))
                 magnified = lap_image * amplification_factor
             else:
                 # Not enough data, return original
@@ -257,18 +256,26 @@ class EVMPipeline:
             enhanced_logger.log_error("Frame reconstruction failed", e)
             return original_frame
 
-    def _create_passthrough_frame(self, frame: np.ndarray, start_time: float) -> Tuple[np.ndarray, Dict]:
+    def _create_passthrough_frame(
+        self,
+        frame: np.ndarray,
+        start_time: float,
+        amplification: float,
+        motion_level: float,
+    ) -> Tuple[np.ndarray, Dict]:
         """Create a passthrough frame for skipped frames."""
         processing_time = (time.time() - start_time) * 1000
-        
+
         metadata = {
             "frame_index": self.frame_count,
             "processing_time_ms": round(processing_time, 2),
             "frames_skipped": self.frame_skip_count,
             "passthrough": True,
             "is_ready": False,
+            "current_amplification": amplification,
+            "motion_level": motion_level,
         }
-        
+
         return frame, metadata
 
     def reset(self) -> None:
@@ -276,6 +283,47 @@ class EVMPipeline:
         for buffer in self.buffers.values():
             buffer.clear()
         self.frame_count = 0
+        self.total_processing_time = 0.0
+        self.average_processing_time = 0.0
+        self.motion_history = []
+        self.frame_skip_count = 0
+        self.skipped_frames_total = 0
+        if hasattr(self, "_prev_frame"):
+            del self._prev_frame
+
+    def update_parameters(
+        self,
+        amplification: float = None,
+        low_freq: float = None,
+        high_freq: float = None,
+        sampling_rate: float = None,
+    ) -> Dict:
+        """Update runtime EVM parameters safely."""
+        if amplification is not None:
+            self.amplification = max(0.1, float(amplification))
+
+        need_filter_rebuild = False
+        if low_freq is not None:
+            self.low_freq = max(0.1, float(low_freq))
+            need_filter_rebuild = True
+        if high_freq is not None:
+            self.high_freq = max(self.low_freq + 0.1, float(high_freq))
+            need_filter_rebuild = True
+        if sampling_rate is not None:
+            self.sampling_rate = max(1.0, float(sampling_rate))
+            need_filter_rebuild = True
+
+        if need_filter_rebuild:
+            self.temporal_filter = TemporalBandPassFilter(
+                self.low_freq, self.high_freq, self.sampling_rate
+            )
+
+        return {
+            "amplification_factor": self.amplification,
+            "cutoff_freq_low": self.low_freq,
+            "cutoff_freq_high": self.high_freq,
+            "sampling_rate": self.sampling_rate,
+        }
 
     def get_statistics(self) -> Dict:
         """Get pipeline statistics.
@@ -285,8 +333,10 @@ class EVMPipeline:
         """
         return {
             "frame_count": self.frame_count,
+            "skipped_frames_total": self.skipped_frames_total,
             "num_levels": self.num_levels,
             "amplification": self.amplification,
             "frequency_range": f"{self.low_freq}-{self.high_freq} Hz",
             "sampling_rate": self.sampling_rate,
+            "average_processing_time_ms": round(self.average_processing_time, 2),
         }
