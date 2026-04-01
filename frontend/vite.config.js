@@ -1,6 +1,8 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const buildOutDir = process.env.VITE_BUILD_OUT_DIR || "../backend/static";
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -13,7 +15,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../backend/static",
+    outDir: buildOutDir,
     emptyOutDir: false,
   },
 });

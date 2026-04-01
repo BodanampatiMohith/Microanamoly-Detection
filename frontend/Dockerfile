@@ -2,6 +2,11 @@ FROM node:18-slim as builder
 
 WORKDIR /app
 
+ARG VITE_BUILD_OUT_DIR=dist
+ARG VITE_API_BASE_URL=/api
+ENV VITE_BUILD_OUT_DIR=$VITE_BUILD_OUT_DIR
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 # Copy package files
 COPY package.json package-lock.json ./
 
