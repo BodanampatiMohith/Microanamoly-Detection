@@ -1,8 +1,16 @@
 /**
  * API Service - Handles communication with the Flask backend.
+ *
+ * Prefer the same-origin `/api` path so Vite can proxy requests in dev and the
+ * built app can talk to Flask directly in production. If that path fails,
+ * fall back to common local Flask URLs.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL;
+const defaultApiCandidates = ["/api", "http://127.0.0.1:5000/api", "http://localhost:5000/api"];
+const API_CANDIDATES = configuredApiBase ? [configuredApiBase] : defaultApiCandidates;
+
+let activeApiBase = API_CANDIDATES[0];
 
 const parseResponse = async (response) => {
   const contentType = response.headers.get("content-type") || "";
@@ -26,11 +34,27 @@ const parseResponse = async (response) => {
 };
 
 const request = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, options);
-  return parseResponse(response);
+  let lastError = null;
+
+  for (const base of API_CANDIDATES) {
+    try {
+      const response = await fetch(`${base}${path}`, options);
+      const data = await parseResponse(response);
+      activeApiBase = base;
+      return data;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error(`Unable to reach backend via ${activeApiBase}${path}`);
 };
 
 export const apiService = {
+  getActiveApiBase() {
+    return activeApiBase;
+  },
+
   async health() {
     return request("/health");
   },
