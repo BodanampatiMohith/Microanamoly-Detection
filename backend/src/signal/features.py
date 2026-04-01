@@ -85,6 +85,13 @@ class FeatureExtractor:
         # Spectral energy in bands
         energy_features = {}
         total_energy = np.sum(magnitude**2)
+        spectrum_points = [
+            {
+                "frequency": float(freq),
+                "magnitude": float(mag),
+            }
+            for freq, mag in zip(freqs[1:65], magnitude[1:65])
+        ]
 
         for band in FEATURES_CONFIG["energy_bands"]:
             name = band["name"]
@@ -102,6 +109,7 @@ class FeatureExtractor:
             "dominant_frequency": dominant_freq,
             "spectral_centroid": float(np.average(freqs, weights=magnitude)),
             "spectral_entropy": float(self._spectral_entropy(magnitude)),
+            "spectrum_points": spectrum_points,
             **energy_features,
         }
 
@@ -142,6 +150,7 @@ class FeatureExtractor:
             "dominant_frequency": 0.0,
             "spectral_centroid": 0.0,
             "spectral_entropy": 0.0,
+            "spectrum_points": [],
         }
 
         for band in FEATURES_CONFIG["energy_bands"]:

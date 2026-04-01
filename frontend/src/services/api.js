@@ -1,90 +1,108 @@
 /**
- * API Service - Handles communication with Flask backend
+ * API Service - Handles communication with the Flask backend.
  */
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+
+const parseResponse = async (response) => {
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+
+  if (!response.ok) {
+    const message =
+      (typeof data === "object" && (data.error || data.message)) ||
+      response.statusText ||
+      "Request failed";
+    throw new Error(message);
+  }
+
+  if (typeof data === "object" && data !== null && "data" in data) {
+    return data.data;
+  }
+
+  return data;
+};
+
+const request = async (path, options = {}) => {
+  const response = await fetch(`${API_BASE}${path}`, options);
+  return parseResponse(response);
+};
 
 export const apiService = {
-  /**
-   * Check backend health
-   */
   async health() {
-    const response = await fetch(`${API_BASE}/health`);
-    return response.json();
+    return request("/health");
   },
 
-  /**
-   * Get configuration
-   */
   async getConfig() {
-    const response = await fetch(`${API_BASE}/config`);
-    return response.json();
+    return request("/config");
   },
 
-  /**
-   * Get current ROI
-   */
   async getROI() {
-    const response = await fetch(`${API_BASE}/roi`);
-    return response.json();
+    return request("/roi");
   },
 
-  /**
-   * Update ROI
-   */
   async updateROI(roi) {
-    const response = await fetch(`${API_BASE}/roi`, {
+    return request("/roi", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(roi),
     });
-    return response.json();
   },
 
-  /**
-   * Process single frame
-   */
   async processFrame(imageBase64, roi = null) {
-    const payload = {
-      image: imageBase64,
-    };
+    const payload = { image: imageBase64 };
 
     if (roi) {
       payload.roi = roi;
     }
 
-    const response = await fetch(`${API_BASE}/process_frame`, {
+    return request("/process_frame", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
-
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
-    }
-
-    return response.json();
   },
 
-  /**
-   * Get pipeline statistics
-   */
   async getStatistics() {
-    const response = await fetch(`${API_BASE}/statistics`);
-    return response.json();
+    return request("/statistics");
   },
 
-  /**
-   * Reset pipeline
-   */
+  async getRuntimeEvm() {
+    const response = await request("/runtime/evm");
+    return response.evm || response;
+  },
+
+  async updateRuntimeEvm(params) {
+    const response = await request("/runtime/evm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(params),
+    });
+    return response.evm || response;
+  },
+
+  async updateAmplification(amplificationFactor) {
+    return this.updateRuntimeEvm({ amplification_factor: amplificationFactor });
+  },
+
+  async updateFrequencyBand({ low, high }) {
+    return this.updateRuntimeEvm({
+      cutoff_freq_low: low,
+      cutoff_freq_high: high,
+    });
+  },
+
   async resetPipeline() {
-    const response = await fetch(`${API_BASE}/reset`, {
+    return request("/reset", {
       method: "POST",
     });
-    return response.json();
   },
 };

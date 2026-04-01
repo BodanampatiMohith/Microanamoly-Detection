@@ -1,5 +1,3 @@
-import React, { useMemo } from "react";
-
 export const StabilityGauge = ({ value = 75, status = "NORMAL" }) => {
   // Clamp value between 0 and 100
   const clampedValue = Math.max(0, Math.min(100, value));
@@ -11,14 +9,8 @@ export const StabilityGauge = ({ value = 75, status = "NORMAL" }) => {
     return { bg: "#FF3B30", glow: "rgba(255, 59, 48, 0.5)" };
   };
 
-  const getStatusText = () => {
-    if (clampedValue >= 75) return "NORMAL";
-    if (clampedValue >= 50) return "WARNING";
-    return "FAULT";
-  };
-
   const colors = getStatusColor();
-  const statusText = getStatusText();
+  const statusText = status || (clampedValue >= 75 ? "Normal" : clampedValue >= 50 ? "Warning" : "Fault");
 
   // Create SVG gauge visualization
   const angle = (clampedValue / 100) * 180 - 90; // -90 to 90 degrees

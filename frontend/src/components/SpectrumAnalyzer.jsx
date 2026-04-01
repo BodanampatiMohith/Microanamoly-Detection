@@ -40,11 +40,16 @@ export const SpectrumAnalyzer = ({ spectralData = [], dominantFrequency = 15 }) 
     }
 
     // Use provided data, ensure it has the right format
-    return spectralData.map((val, idx) => ({
-      frequency: idx * 2,
-      magnitude: typeof val === "number" ? val : val.magnitude || 0,
-      isDominant: Math.abs(idx * 2 - dominantFrequency) < 3,
-    }));
+    return spectralData.map((val, idx) => {
+      const frequency = typeof val === "number" ? idx * 2 : val.frequency ?? idx * 2;
+      const magnitude = typeof val === "number" ? val : val.magnitude || 0;
+
+      return {
+        frequency,
+        magnitude,
+        isDominant: Math.abs(frequency - dominantFrequency) < 3,
+      };
+    });
   }, [spectralData, dominantFrequency]);
 
   const CustomTooltip = ({ active, payload }) => {
@@ -72,12 +77,12 @@ export const SpectrumAnalyzer = ({ spectralData = [], dominantFrequency = 15 }) 
           <div className="info-item">
             <span className="info-label">Dominant Freq:</span>
             <span className="info-value highlight">
-              {actualDominant.frequency.toFixed(1)} Hz
+              {(actualDominant?.frequency || 0).toFixed(1)} Hz
             </span>
           </div>
           <div className="info-item">
             <span className="info-label">Peak Mag:</span>
-            <span className="info-value">{actualDominant.magnitude.toFixed(3)}</span>
+            <span className="info-value">{(actualDominant?.magnitude || 0).toFixed(3)}</span>
           </div>
         </div>
       </div>

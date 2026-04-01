@@ -1,17 +1,23 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import VideoCapture from "../components/VideoCapture";
 import ProfessionalDashboard from "../components/ProfessionalDashboard";
 import PerformanceMonitor from "../components/PerformanceMonitor";
 import { apiService } from "../services/api";
 
-export const Home = () => {
-  const [roi, setRoi] = useState({
-    x: 100,
-    y: 100,
-    width: 300,
-    height: 200,
-  });
+const DEFAULT_ROI = {
+  x: 100,
+  y: 100,
+  width: 300,
+  height: 200,
+};
 
+const DEFAULT_FREQUENCY_BAND = {
+  low: 3,
+  high: 30,
+};
+
+export const Home = () => {
+  const [roi, setRoi] = useState(DEFAULT_ROI);
   const [processResult, setProcessResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -20,75 +26,129 @@ export const Home = () => {
   const [backendHealth, setBackendHealth] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [currentAmplification, setCurrentAmplification] = useState(20);
-  const [frequencyBand, setFrequencyBand] = useState({ low: 0.4, high: 100 });
+  const [frequencyBand, setFrequencyBand] = useState(DEFAULT_FREQUENCY_BAND);
   const [waveformData, setWaveformData] = useState([]);
   const [spectralData, setSpectralData] = useState([]);
   const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
-  
-  const waveformHistoryRef = useRef([]);
-  const spectralHistoryRef = useRef([]);
 
-  // Handle performance updates from PerformanceMonitor
+  const waveformHistoryRef = useRef([]);
+
+  const clampRoi = useCallback((nextRoi) => {
+    setRoi({
+      x: Math.max(0, Math.round(nextRoi.x || 0)),
+      y: Math.max(0, Math.round(nextRoi.y || 0)),
+      width: Math.max(50, Math.round(nextRoi.width || 50)),
+      height: Math.max(50, Math.round(nextRoi.height || 50)),
+    });
+  }, []);
+
+  const syncRuntimeState = useCallback(async () => {
+    const [roiResult, evmResult] = await Promise.allSettled([
+      apiService.getROI(),
+      apiService.getRuntimeEvm(),
+    ]);
+
+    if (roiResult.status === "fulfilled" && roiResult.value?.roi) {
+      clampRoi(roiResult.value.roi);
+    }
+
+    if (evmResult.status === "fulfilled") {
+      const evm = evmResult.value;
+      setCurrentAmplification(evm.amplification_factor ?? 20);
+      setFrequencyBand({
+        low: evm.cutoff_freq_low ?? DEFAULT_FREQUENCY_BAND.low,
+        high: evm.cutoff_freq_high ?? DEFAULT_FREQUENCY_BAND.high,
+      });
+    }
+  }, [clampRoi]);
+
   const handlePerformanceUpdate = useCallback((performanceMetrics) => {
-    // Could be used to adjust processing parameters based on performance
     if (performanceMetrics.fps < 15) {
       console.warn("Low FPS detected, consider reducing processing load");
     }
   }, []);
 
-  // Check backend health on mount
   useEffect(() => {
+    let mounted = true;
+
     const checkHealth = async () => {
       try {
         const health = await apiService.health();
-        setBackendHealth(health.status === "healthy");
+        if (!mounted) {
+          return;
+        }
+
+        const isHealthy = health.status === "healthy";
+        setBackendHealth(isHealthy);
+
+        if (isHealthy) {
+          setError((currentError) =>
+            currentError === "Cannot connect to backend. Make sure Flask server is running."
+              ? null
+              : currentError
+          );
+        }
       } catch (err) {
-        console.error("Backend health check failed:", err);
+        if (!mounted) {
+          return;
+        }
+
         setBackendHealth(false);
         setError("Cannot connect to backend. Make sure Flask server is running.");
       }
     };
 
-    checkHealth();
+    const bootstrap = async () => {
+      await checkHealth();
+      if (mounted) {
+        try {
+          await syncRuntimeState();
+        } catch (err) {
+          console.error("Failed to load runtime state:", err);
+        }
+      }
+    };
+
+    bootstrap();
     const interval = setInterval(checkHealth, 5000);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [syncRuntimeState]);
 
-  // Handle frame capture
   const handleFrameCapture = useCallback(
     async (frameData) => {
-      if (!backendHealth || isLoading) return;
+      if (typeof frameData === "string") {
+        setRawVideoFrame(frameData);
+      }
+
+      if (!isMonitoring || !backendHealth || isLoading) {
+        return;
+      }
 
       setIsLoading(true);
       setError(null);
 
       try {
-        // Set raw frame for display
-        if (typeof frameData === "string") {
-          setRawVideoFrame(frameData);
-        }
-
         const result = await apiService.processFrame(frameData, roi);
-
         setProcessResult(result);
 
-        // Update waveform data
-        if (result.features?.motion_signal) {
-          waveformHistoryRef.current = [
-            ...waveformHistoryRef.current,
-            ...result.features.motion_signal,
-          ].slice(-500);
+        const motionValue = result.motion_signal?.current_value;
+        if (typeof motionValue === "number") {
+          waveformHistoryRef.current = [...waveformHistoryRef.current, motionValue].slice(-500);
           setWaveformData([...waveformHistoryRef.current]);
         }
 
-        // Update spectral data
-        if (result.features?.spectral_magnitude) {
-          spectralHistoryRef.current = result.features.spectral_magnitude;
-          setSpectralData([...spectralHistoryRef.current]);
+        if (Array.isArray(result.features?.spectrum_points)) {
+          setSpectralData(result.features.spectrum_points);
         }
 
-        // Update magnified frame
+        if (result.roi_frame) {
+          setRawVideoFrame(`data:image/jpeg;base64,${result.roi_frame}`);
+        }
+
         if (result.magnified_frame) {
           setMagnifiedFrame(`data:image/jpeg;base64,${result.magnified_frame}`);
         }
@@ -99,55 +159,68 @@ export const Home = () => {
         setIsLoading(false);
       }
     },
-    [roi, backendHealth, isLoading]
+    [backendHealth, isLoading, isMonitoring, roi]
   );
 
-  // Handle monitoring start
-  const handleStartMonitoring = () => {
+  const handleStartMonitoring = useCallback(() => {
+    if (!backendHealth) {
+      setError("Start the backend before monitoring.");
+      return;
+    }
+
+    setError(null);
     setIsMonitoring(true);
-  };
+  }, [backendHealth]);
 
-  // Handle monitoring stop
-  const handleStopMonitoring = () => {
+  const handleStopMonitoring = useCallback(() => {
     setIsMonitoring(false);
-  };
+  }, []);
 
-  // Handle amplification change
-  const handleAmplificationChange = (value) => {
+  const handleAmplificationChange = useCallback(async (value) => {
     setCurrentAmplification(value);
-    // Optionally send to backend
-    apiService.updateAmplification?.(value).catch((err) => {
+
+    try {
+      await apiService.updateAmplification(value);
+    } catch (err) {
       console.error("Error updating amplification:", err);
-    });
-  };
+      setError("Failed to update amplification factor.");
+    }
+  }, []);
 
-  // Handle frequency band change
-  const handleFrequencyBandChange = (newBand) => {
-    setFrequencyBand(newBand);
-    // Optionally send to backend
-    apiService.updateFrequencyBand?.(newBand).catch((err) => {
+  const handleFrequencyBandChange = useCallback(async (newBand) => {
+    const safeBand = {
+      low: Math.max(0.1, Number.isFinite(newBand.low) ? newBand.low : DEFAULT_FREQUENCY_BAND.low),
+      high: Math.max(
+        (Number.isFinite(newBand.low) ? newBand.low : DEFAULT_FREQUENCY_BAND.low) + 0.1,
+        Number.isFinite(newBand.high) ? newBand.high : DEFAULT_FREQUENCY_BAND.high
+      ),
+    };
+
+    setFrequencyBand(safeBand);
+
+    try {
+      await apiService.updateFrequencyBand(safeBand);
+    } catch (err) {
       console.error("Error updating frequency band:", err);
-    });
-  };
+      setError("Failed to update frequency band.");
+    }
+  }, []);
 
-  // Handle reset
-  const handleReset = async () => {
+  const handleReset = useCallback(async () => {
     try {
       await apiService.resetPipeline();
       setProcessResult(null);
-      setRawVideoFrame(null);
       setMagnifiedFrame(null);
       setError(null);
       setIsMonitoring(false);
       waveformHistoryRef.current = [];
-      spectralHistoryRef.current = [];
       setWaveformData([]);
       setSpectralData([]);
     } catch (err) {
       console.error("Error resetting pipeline:", err);
-      setError("Failed to reset system");
+      setError("Failed to reset system.");
     }
-  };
+  }, []);
 
   return (
     <div className="professional-app-container">
@@ -168,6 +241,7 @@ export const Home = () => {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 1rem;
             padding: 1rem 2rem;
             background: rgba(20, 30, 50, 0.4);
             border-bottom: 1px solid rgba(0, 229, 255, 0.1);
@@ -192,6 +266,8 @@ export const Home = () => {
             display: flex;
             gap: 1rem;
             align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
           }
 
           .status-badge {
@@ -223,12 +299,9 @@ export const Home = () => {
             50% { opacity: 0.5; }
           }
 
-          .reset-btn {
+          .header-btn {
             padding: 0.6rem 1.2rem;
-            background: linear-gradient(135deg, #00e5ff, #1e90ff);
-            border: 1px solid #00e5ff;
             border-radius: 0.5rem;
-            color: #0b0f1a;
             font-weight: 600;
             cursor: pointer;
             font-size: 0.8rem;
@@ -237,12 +310,24 @@ export const Home = () => {
             text-transform: uppercase;
           }
 
-          .reset-btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 229, 255, 0.4);
+          .reset-btn {
+            background: linear-gradient(135deg, #00e5ff, #1e90ff);
+            border: 1px solid #00e5ff;
+            color: #0b0f1a;
           }
 
-          .reset-btn:disabled {
+          .performance-btn {
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px solid rgba(0, 229, 255, 0.35);
+            color: #00e5ff;
+          }
+
+          .header-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 229, 255, 0.25);
+          }
+
+          .header-btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
           }
@@ -254,6 +339,7 @@ export const Home = () => {
             color: #ff9999;
             font-size: 0.9rem;
             letter-spacing: 0.3px;
+            flex-shrink: 0;
           }
 
           .app-content {
@@ -263,7 +349,6 @@ export const Home = () => {
         `}
       </style>
 
-      {/* Header */}
       <header className="app-header">
         <div>
           <div className="app-header-title">
@@ -271,37 +356,38 @@ export const Home = () => {
           </div>
           <div className="app-header-subtitle">Real-time Predictive Maintenance System</div>
         </div>
+
         <div className="header-controls">
           <div className="status-badge">
             <span className={`status-dot ${backendHealth ? "" : "disconnected"}`} />
             <span>{backendHealth ? "Backend Connected" : "Backend Disconnected"}</span>
           </div>
+
           <button
-            className="reset-btn"
+            className="header-btn reset-btn"
             onClick={handleReset}
             disabled={!backendHealth}
             title="Reset all systems and clear data"
           >
             Reset System
           </button>
+
           <button
-            className="performance-btn"
-            onClick={() => setShowPerformanceMonitor(!showPerformanceMonitor)}
+            className="header-btn performance-btn"
+            onClick={() => setShowPerformanceMonitor((current) => !current)}
             title="Toggle performance monitor"
           >
-            📊 Performance
+            Performance
           </button>
         </div>
       </header>
 
-      {/* Error Banner */}
       {error && (
         <div className="error-banner">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      {/* Performance Monitor */}
       {showPerformanceMonitor && (
         <PerformanceMonitor
           isVisible={showPerformanceMonitor}
@@ -309,22 +395,23 @@ export const Home = () => {
         />
       )}
 
-      {/* Main Content */}
       <div className="app-content">
         <VideoCapture
           onFrameCapture={handleFrameCapture}
-          rol={roi}
-          onRoiChange={setRoi}
           isMonitoring={isMonitoring}
         />
 
         <ProfessionalDashboard
+          backendConnected={backendHealth}
           rawVideoFrame={rawVideoFrame}
           magnifiedFrame={magnifiedFrame}
           waveformData={waveformData}
           spectralData={spectralData}
           processResult={processResult}
           isMonitoring={isMonitoring}
+          isLoading={isLoading}
+          roi={roi}
+          onRoiChange={clampRoi}
           onStartMonitoring={handleStartMonitoring}
           onStopMonitoring={handleStopMonitoring}
           onAmplificationChange={handleAmplificationChange}

@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime
 from typing import Tuple, Dict
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # Import from src modules
@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
 # Global state
@@ -501,9 +501,22 @@ def reset_pipeline():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/", methods=["GET"])
-def index():
-    """Serve frontend."""
+@app.route("/", defaults={"path": ""}, methods=["GET"])
+@app.route("/<path:path>", methods=["GET"])
+def index(path):
+    """Serve the built frontend when available, otherwise return API info."""
+    static_root = app.static_folder
+
+    if static_root:
+        requested_path = os.path.join(static_root, path)
+        index_path = os.path.join(static_root, "index.html")
+
+        if path and os.path.exists(requested_path):
+            return send_from_directory(static_root, path)
+
+        if os.path.exists(index_path):
+            return send_from_directory(static_root, "index.html")
+
     return "Microanomalies Detection Backend API. Use React frontend to interact."
 
 

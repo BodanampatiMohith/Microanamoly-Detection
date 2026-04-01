@@ -1,1 +1,189 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';\n\nconst PerformanceMonitor = ({ \n  isVisible = true, \n  onPerformanceUpdate \n}) => {\n  const [metrics, setMetrics] = useState({\n    fps: 0,\n    frameTime: 0,\n    memoryUsage: 0,\n    cpuUsage: 0,\n    networkLatency: 0,\n    droppedFrames: 0,\n    averageProcessingTime: 0,\n  });\n  \n  const [history, setHistory] = useState([]);\n  const [isRecording, setIsRecording] = useState(false);\n  \n  const frameCountRef = useRef(0);\n  const lastFrameTimeRef = useRef(performance.now());\n  const fpsHistoryRef = useRef([]);\n  const performanceHistoryRef = useRef([]);\n  const animationFrameRef = useRef();\n  \n  // Calculate FPS and performance metrics\n  const calculateMetrics = useCallback(() => {\n    const currentTime = performance.now();\n    const deltaTime = currentTime - lastFrameTimeRef.current;\n    \n    if (deltaTime > 0) {\n      const currentFPS = 1000 / deltaTime;\n      fpsHistoryRef.current.push(currentFPS);\n      \n      // Keep only last 60 frames for FPS calculation\n      if (fpsHistoryRef.current.length > 60) {\n        fpsHistoryRef.current.shift();\n      }\n      \n      const averageFPS = fpsHistoryRef.current.reduce((a, b) => a + b, 0) / fpsHistoryRef.current.length;\n      \n      // Memory usage (if available)\n      let memoryUsage = 0;\n      if (performance.memory) {\n        memoryUsage = performance.memory.usedJSHeapSize / (1024 * 1024); // MB\n      }\n      \n      // Network latency simulation (would be real in production)\n      const networkLatency = Math.random() * 10 + 5; // 5-15ms\n      \n      const newMetrics = {\n        fps: Math.round(averageFPS * 10) / 10,\n        frameTime: Math.round(deltaTime * 100) / 100,\n        memoryUsage: Math.round(memoryUsage * 100) / 100,\n        cpuUsage: Math.round((100 - averageFPS) * 2.5), // Approximation\n        networkLatency: Math.round(networkLatency * 100) / 100,\n        droppedFrames: Math.max(0, 30 - Math.round(averageFPS)), // Approximation\n        averageProcessingTime: metrics.averageProcessingTime, // Will be updated from parent\n      };\n      \n      setMetrics(newMetrics);\n      \n      // Update history\n      const timestamp = new Date().toISOString();\n      const historyEntry = { ...newMetrics, timestamp };\n      \n      performanceHistoryRef.current.push(historyEntry);\n      if (performanceHistoryRef.current.length > 300) { // Keep 5 minutes at 1fps\n        performanceHistoryRef.current.shift();\n      }\n      \n      setHistory([...performanceHistoryRef.current]);\n      \n      // Notify parent component\n      if (onPerformanceUpdate) {\n        onPerformanceUpdate(newMetrics);\n      }\n    }\n    \n    lastFrameTimeRef.current = currentTime;\n    frameCountRef.current++;\n  }, [metrics.averageProcessingTime, onPerformanceUpdate]);\n  \n  // Performance monitoring loop\n  const monitorPerformance = useCallback(() => {\n    if (!isVisible) return;\n    \n    calculateMetrics();\n    animationFrameRef.current = requestAnimationFrame(monitorPerformance);\n  }, [isVisible, calculateMetrics]);\n  \n  // Start/stop monitoring\n  useEffect(() => {\n    if (isVisible) {\n      animationFrameRef.current = requestAnimationFrame(monitorPerformance);\n    } else {\n      if (animationFrameRef.current) {\n        cancelAnimationFrame(animationFrameRef.current);\n      }\n    }\n    \n    return () => {\n      if (animationFrameRef.current) {\n        cancelAnimationFrame(animationFrameRef.current);\n      }\n    };\n  }, [isVisible, monitorPerformance]);\n  \n  // Export performance data\n  const exportData = useCallback(() => {\n    const dataStr = JSON.stringify({\n      currentMetrics: metrics,\n      history: history,\n      exportTime: new Date().toISOString(),\n    }, null, 2);\n    \n    const dataBlob = new Blob([dataStr], { type: 'application/json' });\n    const url = URL.createObjectURL(dataBlob);\n    const link = document.createElement('a');\n    link.href = url;\n    link.download = `performance-data-${Date.now()}.json`;\n    link.click();\n    URL.revokeObjectURL(url);\n  }, [metrics, history]);\n  \n  // Clear history\n  const clearHistory = useCallback(() => {\n    performanceHistoryRef.current = [];\n    fpsHistoryRef.current = [];\n    setHistory([]);\n    frameCountRef.current = 0;\n  }, []);\n  \n  if (!isVisible) return null;\n  \n  return (\n    <div className=\"performance-monitor\">\n      <div className=\"monitor-header\">\n        <h3>Performance Monitor</h3>\n        <div className=\"monitor-controls\">\n          <button \n            onClick={() => setIsRecording(!isRecording)}\n            className={`record-btn ${isRecording ? 'recording' : ''}`}\n          >\n            {isRecording ? '⏹️' : '⏺️'}\n          </button>\n          <button onClick={exportData} className=\"export-btn\">\n            📊 Export\n          </button>\n          <button onClick={clearHistory} className=\"clear-btn\">\n            🗑️ Clear\n          </button>\n        </div>\n      </div>\n      \n      <div className=\"metrics-grid\">\n        <div className=\"metric-card\">\n          <div className=\"metric-label\">FPS</div>\n          <div className={`metric-value ${\n            metrics.fps >= 25 ? 'good' : metrics.fps >= 15 ? 'warning' : 'critical'\n          }`}>\n            {metrics.fps}\n          </div>\n        </div>\n        \n        <div className=\"metric-card\">\n          <div className=\"metric-label\">Frame Time</div>\n          <div className={`metric-value ${\n            metrics.frameTime <= 33 ? 'good' : metrics.frameTime <= 66 ? 'warning' : 'critical'\n          }`}>\n            {metrics.frameTime}ms\n          </div>\n        </div>\n        \n        <div className=\"metric-card\">\n          <div className=\"metric-label\">Memory</div>\n          <div className={`metric-value ${\n            metrics.memoryUsage <= 100 ? 'good' : metrics.memoryUsage <= 200 ? 'warning' : 'critical'\n          }`}>\n            {metrics.memoryUsage}MB\n          </div>\n        </div>\n        \n        <div className=\"metric-card\">\n          <div className=\"metric-label\">CPU Usage</div>\n          <div className={`metric-value ${\n            metrics.cpuUsage <= 50 ? 'good' : metrics.cpuUsage <= 75 ? 'warning' : 'critical'\n          }`}>\n            {metrics.cpuUsage}%\n          </div>\n        </div>\n        \n        <div className=\"metric-card\">\n          <div className=\"metric-label\">Network Latency</div>\n          <div className=\"metric-value good\">\n            {metrics.networkLatency}ms\n          </div>\n        </div>\n        \n        <div className=\"metric-card\">\n          <div className=\"metric-label\">Dropped Frames</div>\n          <div className={`metric-value ${\n            metrics.droppedFrames === 0 ? 'good' : metrics.droppedFrames <= 5 ? 'warning' : 'critical'\n          }`}>\n            {metrics.droppedFrames}\n          </div>\n        </div>\n      </div>\n      \n      {history.length > 0 && (\n        <div className=\"performance-chart\">\n          <h4>Performance History (Last 5 minutes)</h4>\n          <div className=\"chart-container\">\n            <div className=\"chart-placeholder\">\n              📈 Performance chart would be rendered here\n              <br />\n              <small>History points: {history.length}</small>\n            </div>\n          </div>\n        </div>\n      )}\n    </div>\n  );\n};\n\nexport default PerformanceMonitor;
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
+const HISTORY_LIMIT = 120;
+
+const formatValue = (value, unit = "") => `${value}${unit}`;
+
+const getMetricState = (value, goodThreshold, warningThreshold, invert = false) => {
+  if (invert) {
+    if (value <= goodThreshold) {
+      return "good";
+    }
+    if (value <= warningThreshold) {
+      return "warning";
+    }
+    return "critical";
+  }
+
+  if (value >= goodThreshold) {
+    return "good";
+  }
+  if (value >= warningThreshold) {
+    return "warning";
+  }
+  return "critical";
+};
+
+const PerformanceMonitor = ({ isVisible = true, onPerformanceUpdate }) => {
+  const [metrics, setMetrics] = useState({
+    fps: 0,
+    frameTime: 0,
+    memoryUsage: 0,
+    networkLatency: 0,
+    droppedFrames: 0,
+  });
+  const [historySize, setHistorySize] = useState(0);
+
+  const lastTimestampRef = useRef(performance.now());
+  const fpsHistoryRef = useRef([]);
+  const historyRef = useRef([]);
+
+  const sampleMetrics = useCallback(() => {
+    const currentTime = performance.now();
+    const deltaTime = currentTime - lastTimestampRef.current;
+    const currentFps = deltaTime > 0 ? 1000 / deltaTime : 0;
+
+    fpsHistoryRef.current.push(currentFps);
+    if (fpsHistoryRef.current.length > 30) {
+      fpsHistoryRef.current.shift();
+    }
+
+    const averageFps =
+      fpsHistoryRef.current.reduce((total, fps) => total + fps, 0) /
+      Math.max(fpsHistoryRef.current.length, 1);
+
+    const memoryUsage = performance.memory
+      ? performance.memory.usedJSHeapSize / (1024 * 1024)
+      : 0;
+
+    const nextMetrics = {
+      fps: Math.round(averageFps * 10) / 10,
+      frameTime: Math.round(deltaTime * 100) / 100,
+      memoryUsage: Math.round(memoryUsage * 100) / 100,
+      networkLatency: Math.round((5 + Math.random() * 10) * 100) / 100,
+      droppedFrames: Math.max(0, 30 - Math.round(averageFps)),
+    };
+
+    historyRef.current.push({
+      ...nextMetrics,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (historyRef.current.length > HISTORY_LIMIT) {
+      historyRef.current.shift();
+    }
+
+    lastTimestampRef.current = currentTime;
+    setMetrics(nextMetrics);
+    setHistorySize(historyRef.current.length);
+    onPerformanceUpdate?.(nextMetrics);
+  }, [onPerformanceUpdate]);
+
+  useEffect(() => {
+    if (!isVisible) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(sampleMetrics, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isVisible, sampleMetrics]);
+
+  const clearHistory = useCallback(() => {
+    fpsHistoryRef.current = [];
+    historyRef.current = [];
+    setHistorySize(0);
+  }, []);
+
+  const exportData = useCallback(() => {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            currentMetrics: metrics,
+            history: historyRef.current,
+            exportTime: new Date().toISOString(),
+          },
+          null,
+          2
+        ),
+      ],
+      { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `performance-data-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [metrics]);
+
+  if (!isVisible) {
+    return null;
+  }
+
+  return (
+    <div className="perf-monitor">
+      <div className="perf-monitor-header">
+        <h3>Performance Monitor</h3>
+        <div className="perf-monitor-controls">
+          <button onClick={exportData} className="perf-btn">
+            Export
+          </button>
+          <button onClick={clearHistory} className="perf-btn">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="perf-grid">
+        <div className="perf-card">
+          <div className="perf-label">FPS</div>
+          <div className={`perf-value ${getMetricState(metrics.fps, 25, 15)}`}>
+            {formatValue(metrics.fps)}
+          </div>
+        </div>
+
+        <div className="perf-card">
+          <div className="perf-label">Frame Time</div>
+          <div className={`perf-value ${getMetricState(metrics.frameTime, 33, 66, true)}`}>
+            {formatValue(metrics.frameTime, "ms")}
+          </div>
+        </div>
+
+        <div className="perf-card">
+          <div className="perf-label">Memory</div>
+          <div className={`perf-value ${getMetricState(metrics.memoryUsage, 100, 200, true)}`}>
+            {formatValue(metrics.memoryUsage, "MB")}
+          </div>
+        </div>
+
+        <div className="perf-card">
+          <div className="perf-label">Network</div>
+          <div className="perf-value good">{formatValue(metrics.networkLatency, "ms")}</div>
+        </div>
+
+        <div className="perf-card">
+          <div className="perf-label">Dropped Frames</div>
+          <div className={`perf-value ${getMetricState(metrics.droppedFrames, 0, 5, true)}`}>
+            {formatValue(metrics.droppedFrames)}
+          </div>
+        </div>
+
+        <div className="perf-card">
+          <div className="perf-label">Samples</div>
+          <div className="perf-value">{formatValue(historySize)}</div>
+        </div>
+      </div>
+
+      <div className="perf-chart">
+        <h4>Recent Sampling Window</h4>
+        <div className="perf-chart-placeholder">
+          Tracking {historySize} performance samples for this session.
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PerformanceMonitor;
