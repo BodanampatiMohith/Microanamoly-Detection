@@ -1,33 +1,55 @@
 /**
- * API Service - Handles communication with the Flask backend.
+ * API service for the Flask backend.
  *
- * Prefer the same-origin `/api` path so Vite can proxy requests in dev and the
- * built app can talk to Flask directly in production. If that path fails,
- * fall back to common local Flask URLs.
+ * We prefer same-origin `/api` first so Vite can proxy requests in development
+ * and Flask can serve the built frontend in production. If that candidate
+ * returns a non-API payload such as HTML, we treat it as a failed probe and
+ * fall back to explicit local backend URLs.
  */
 
-const configuredApiBase = import.meta.env.VITE_API_BASE_URL;
+const normalizeApiBase = (base) => {
+  if (!base) {
+    return null;
+  }
+
+  const trimmed = base.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+};
+
+const configuredApiBase = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 const defaultApiCandidates = ["/api", "http://127.0.0.1:5000/api", "http://localhost:5000/api"];
-const API_CANDIDATES = configuredApiBase ? [configuredApiBase] : defaultApiCandidates;
+const API_CANDIDATES = (configuredApiBase ? [configuredApiBase] : defaultApiCandidates).filter(Boolean);
 
 let activeApiBase = API_CANDIDATES[0];
 
-const parseResponse = async (response) => {
+const getCandidateOrder = () => {
+  const ordered = [activeApiBase, ...API_CANDIDATES];
+  return [...new Set(ordered.filter(Boolean))];
+};
+
+const parseResponse = async (response, requestUrl) => {
   const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json")
-    ? await response.json()
-    : await response.text();
+  const isJson = contentType.includes("application/json");
+  const data = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
     const message =
-      (typeof data === "object" && (data.error || data.message)) ||
+      (typeof data === "object" && data !== null && (data.error || data.message)) ||
       response.statusText ||
       "Request failed";
     throw new Error(message);
   }
 
+  if (!isJson) {
+    throw new Error(`Invalid API response from ${requestUrl}: expected JSON but received ${contentType || "unknown content type"}`);
+  }
+
   if (typeof data === "object" && data !== null && "data" in data) {
     return data.data;
+  }
+
+  if (typeof data !== "object" || data === null) {
+    throw new Error(`Invalid API response from ${requestUrl}: expected a JSON object`);
   }
 
   return data;
@@ -36,10 +58,12 @@ const parseResponse = async (response) => {
 const request = async (path, options = {}) => {
   let lastError = null;
 
-  for (const base of API_CANDIDATES) {
+  for (const base of getCandidateOrder()) {
+    const url = `${base}${path}`;
+
     try {
-      const response = await fetch(`${base}${path}`, options);
-      const data = await parseResponse(response);
+      const response = await fetch(url, options);
+      const data = await parseResponse(response, url);
       activeApiBase = base;
       return data;
     } catch (error) {

@@ -1,53 +1,51 @@
 # Microanomaly Detection System
 
-Full-stack application for machine vibration monitoring using webcam video, Eulerian Video Magnification, signal processing, and anomaly detection.
+Full-stack vibration monitoring system that captures webcam frames in the browser, processes them with a Flask backend, and displays live anomaly metrics in a professional React dashboard.
 
-## What This Project Does
+## Current Status
 
-- captures webcam frames in the browser
-- sends frames to a Flask backend for processing
-- extracts vibration features such as RMS, variance, dominant frequency, and spectral entropy
-- classifies machine behavior as normal or abnormal
-- shows results in a live React dashboard
+The project is wired end to end.
 
-## Tech Stack
+- Frontend dev server proxies `/api` to Flask during local development.
+- The production build is emitted into `backend/static` so Flask can serve the dashboard and API from one service.
+- The backend API was smoke-tested on April 6, 2026 with:
+  - `GET /api/health`
+  - `GET /api/runtime/evm`
+  - `POST /api/process_frame`
+- The frontend production build was also verified with `npm run build`.
 
-- Frontend: React, Vite
-- Backend: Flask, NumPy, SciPy, OpenCV, scikit-learn
+## Stack
+
+- Frontend: React 18, Vite, Recharts
+- Backend: Flask, OpenCV, NumPy, SciPy, scikit-learn
 - Deployment: Docker, Gunicorn
 
 ## Project Structure
 
 ```text
 Microanamoly-detection/
-├── backend/
-│   ├── app.py
-│   ├── requirements.txt
-│   └── src/
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-├── data/
-├── Dockerfile
-├── docker-compose.yml
-├── QUICK_START.md
-├── DEPLOYMENT.md
-└── README.md
+|-- backend/
+|   |-- app.py
+|   |-- requirements.txt
+|   |-- src/
+|   `-- static/
+|-- frontend/
+|   |-- package.json
+|   |-- vite.config.js
+|   `-- src/
+|-- data/
+|-- docker-compose.yml
+|-- Dockerfile
+|-- QUICK_START.md
+|-- DEPLOYMENT.md
+`-- README.md
 ```
 
-## Prerequisites
+## Local Development
 
-- Python 3.10 or newer recommended
-- Node.js 18 or newer recommended
-- npm
-- Modern browser with camera access
+You need both the backend and frontend running during development.
 
-## Run Locally
-
-Start the backend first.
-
-### Backend
+### 1. Start the backend
 
 ```powershell
 cd backend
@@ -63,7 +61,7 @@ Backend URL:
 http://127.0.0.1:5000
 ```
 
-### Frontend
+### 2. Start the frontend
 
 Open a second terminal:
 
@@ -79,15 +77,30 @@ Frontend URL:
 http://localhost:3000
 ```
 
-### Notes
+### 3. Open the dashboard
 
-- Keep both terminals running.
-- Allow camera permission in the browser.
-- The frontend uses `/api` in dev and can also fall back to `http://127.0.0.1:5000/api` and `http://localhost:5000/api`.
+Open `http://localhost:3000` and allow webcam access.
 
-## Production-Style Local Run With Docker
+The header should show `Backend Connected` once Flask is running.
 
-This project now supports deploying as one service.
+## Production / Deployment
+
+For the real app, frontend-only deployment is not enough.
+
+Why:
+
+- the React app captures frames
+- the Flask backend processes frames and computes anomaly metrics
+- without the backend, the dashboard has no processing pipeline
+
+Recommended deployment:
+
+- deploy one service using the root `Dockerfile`
+- let that service serve both the API and the built frontend
+
+This is the simplest and most reliable setup because the browser and API share the same origin.
+
+### Build and run with Docker
 
 ```bash
 docker build -t microanomaly-detection .
@@ -100,7 +113,7 @@ Open:
 http://localhost:5000
 ```
 
-## Docker Compose
+### Docker Compose
 
 ```bash
 docker-compose up --build
@@ -112,7 +125,16 @@ Open:
 http://localhost:5000
 ```
 
-## API Endpoints
+## API Notes
+
+The frontend API client now:
+
+- prefers same-origin `/api`
+- falls back to `http://127.0.0.1:5000/api` and `http://localhost:5000/api`
+- rejects HTML or other non-JSON responses from bad proxy or hosting setups
+- normalizes `VITE_API_BASE_URL` so both `http://host:5000` and `http://host:5000/api` work
+
+## Main API Endpoints
 
 - `GET /api/health`
 - `GET /api/config`
@@ -128,72 +150,64 @@ http://localhost:5000
 - `POST /api/runtime/evm`
 - `POST /api/reset`
 
-## Deployment
+## Useful Commands
 
-Use the root `Dockerfile` for deployment.
+### Rebuild the production frontend into Flask static files
 
-Recommended platforms:
+```powershell
+cd frontend
+npm install
+npm run build
+```
 
-- Render
-- Railway
-- Any Docker-compatible host
+### Run a quick backend smoke test
 
-Important:
-
-- deploy from the repository root
-- use the root `Dockerfile`
-- do not deploy frontend and backend as separate apps unless you explicitly set `VITE_API_BASE_URL`
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for deployment details.
+```powershell
+cd backend
+.\venv\Scripts\python.exe -c "from app import app; client=app.test_client(); print(client.get('/api/health').get_json())"
+```
 
 ## Troubleshooting
 
-### Frontend shows "Backend Disconnected"
+### Frontend shows `Backend Disconnected`
 
-- Make sure `python app.py` is running in `backend`
-- Refresh the browser
-- Confirm the backend opens at `http://127.0.0.1:5000/api/health`
+- Make sure Flask is running on port `5000`
+- Refresh the page after the backend starts
+- Confirm `http://127.0.0.1:5000/api/health` returns JSON
 
-### `npm run dev` fails
+### Frontend loads but charts do not update
 
-- make sure you are inside the `frontend` folder
-- run `npm install` first
+- Allow camera permission in the browser
+- Start monitoring from the control panel
+- Check Flask logs for `/api/process_frame` errors
 
-### `python app.py` fails
+### Production deployment shows the UI but API does not work
 
-- make sure you are inside the `backend` folder
-- activate the virtual environment
-- run `pip install -r requirements.txt`
+- deploy the whole project with the root `Dockerfile`
+- do not deploy only the frontend unless you intentionally point it at a separate public backend with `VITE_API_BASE_URL`
 
-### Deployed app shows 404
+## GitHub Update Workflow
 
-- use the root `Dockerfile`
-- deploy as one service
-- open the deployed root URL, not `/3000` or `/5000`
-
-## Useful Docs
-
-- [QUICK_START.md](./QUICK_START.md)
-- [DEPLOYMENT.md](./DEPLOYMENT.md)
-- [DEV_GUIDE.md](./DEV_GUIDE.md)
-
-## Git Commands
-
-If you changed code and want to update GitHub:
+After reviewing the changes locally:
 
 ```bash
 git status
-git add .
-git commit -m "Update project"
+git add README.md QUICK_START.md QUICKSTART.md DEPLOYMENT.md SYSTEM_STATUS.md SETUP_COMPLETE.md PROJECT_SUMMARY.md setup.bat setup.sh frontend/src/services/api.js
+git commit -m "Fix backend/frontend integration and refresh docs"
 git push origin main
 ```
 
-If you only want to push specific files:
+If you want to include the freshly built production assets too:
 
 ```bash
-git add README.md
-git add backend
-git add frontend
-git commit -m "Update README and project files"
+git add backend/static
+git commit -m "Update production build assets"
 git push origin main
 ```
+
+## Docs
+
+- [QUICK_START.md](./QUICK_START.md)
+- [QUICKSTART.md](./QUICKSTART.md)
+- [DEPLOYMENT.md](./DEPLOYMENT.md)
+- [SYSTEM_STATUS.md](./SYSTEM_STATUS.md)

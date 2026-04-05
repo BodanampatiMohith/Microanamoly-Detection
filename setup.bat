@@ -90,6 +90,6 @@ echo   npm run dev
 echo.
 echo Then open: http://localhost:3000
 echo.
-echo See QUICKSTART.md for usage instructions
+echo See QUICK_START.md for usage instructions
 echo.
 pause

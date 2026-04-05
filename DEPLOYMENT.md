@@ -1,28 +1,34 @@
 # Deployment Guide
 
-## Recommended Approach
+## Short Answer
 
-Deploy this project as one service, not as separate frontend and backend apps.
+For this project, deploy both backend and frontend together.
 
-The repository now includes a root `Dockerfile` that:
+Frontend-only deployment is not enough for the real system because:
+
+- the browser only captures webcam frames
+- the backend performs EVM processing, feature extraction, and anomaly detection
+- the dashboard depends on `/api/process_frame` and other Flask endpoints
+
+## Recommended Deployment
+
+Use the root `Dockerfile`.
+
+That image:
 
 - builds the React frontend
-- copies the build into Flask's `static` directory
-- serves everything from one web service
-- listens on the platform-provided `PORT`
+- copies the production build into `backend/static`
+- starts Flask with Gunicorn
+- serves the UI and API from one host and one port
 
-This avoids the 404 and disconnected-backend problems caused by split deployments.
-
-## Docker
-
-Build and run locally:
+## Local Docker Test
 
 ```bash
 docker build -t microanomaly-detection .
 docker run -p 5000:5000 microanomaly-detection
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:5000
@@ -30,32 +36,31 @@ http://localhost:5000
 
 ## Docker Compose
 
-Run:
-
 ```bash
 docker-compose up --build
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:5000
 ```
 
-## Render or Railway
+## Render / Railway / Any Docker Host
 
-Use the root `Dockerfile` from the repository root.
+Use:
 
-- Root directory: repository root
-- Dockerfile path: `Dockerfile`
-- Start command: leave empty if the platform uses the Dockerfile command
-- Port: let the platform provide `PORT`
+- repository root as the build context
+- the root `Dockerfile`
+- the container's default command
 
-## If You Deploy Frontend and Backend Separately
+Do not point the platform at `frontend/` only unless you intentionally want a static-only build.
 
-That setup needs an explicit public backend URL during frontend build time. Without that, the frontend will look for `/api` on its own host and usually show disconnected or 404 errors.
+## If You Intentionally Split Frontend and Backend
 
-For split deployment, build the frontend with a public API base URL, for example:
+This is supported, but it is not the default recommendation.
+
+If you deploy them separately, build the frontend with a public backend URL:
 
 ```bash
 docker build \
@@ -63,4 +68,37 @@ docker build \
   --build-arg VITE_BUILD_OUT_DIR=dist \
   -f frontend/Dockerfile \
   frontend
+```
+
+Notes:
+
+- `VITE_API_BASE_URL` can be `https://your-backend-domain` or `https://your-backend-domain/api`
+- the frontend API client now normalizes both forms correctly
+- the backend must allow requests from the frontend origin
+
+## Production Checklist
+
+- confirm `GET /api/health` returns JSON
+- confirm the dashboard header shows `Backend Connected`
+- confirm camera permission is allowed in the browser
+- confirm `POST /api/process_frame` works with live frames
+- if using the built-in Flask-served frontend, rebuild with `npm run build` before shipping new UI changes
+
+## GitHub / Release Workflow
+
+Before pushing:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+Then:
+
+```bash
+git status
+git add frontend/src/services/api.js README.md QUICK_START.md QUICKSTART.md DEPLOYMENT.md SYSTEM_STATUS.md SETUP_COMPLETE.md PROJECT_SUMMARY.md backend/static setup.bat setup.sh
+git commit -m "Fix backend/frontend integration and refresh deployment docs"
+git push origin main
 ```
