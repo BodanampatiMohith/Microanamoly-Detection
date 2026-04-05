@@ -373,6 +373,19 @@ export const ProfessionalDashboard = ({
           </div>
         </div>
       </div>
+
+      <div className="floating-monitor-action">
+        <button
+          className={`btn btn-primary ${isMonitoring ? "active" : ""}`}
+          onClick={() => (isMonitoring ? onStopMonitoring?.() : onStartMonitoring?.())}
+          disabled={!backendConnected || isLoading}
+          aria-label={monitoringButtonLabel}
+          title={monitoringButtonLabel}
+        >
+          <span className="btn-icon">{isMonitoring ? "[]" : ">"}</span>
+          <span className="btn-text">{monitoringButtonLabel}</span>
+        </button>
+      </div>
     </div>
   );
 };
