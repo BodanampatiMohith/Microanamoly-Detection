@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static", static_url_path="")
-CORS(app)
+cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+cors_origins = "*" if cors_origins_env.strip() == "*" else [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+CORS(app, resources={r"/api/*": {"origins": cors_origins}})
 
 # Global state
 class PipelineState:

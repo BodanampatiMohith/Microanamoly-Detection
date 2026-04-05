@@ -104,7 +104,7 @@ This is the simplest and most reliable setup because the browser and API share t
 
 ```bash
 docker build -t microanomaly-detection .
-docker run -p 5000:5000 microanomaly-detection
+docker run -e PORT=5000 -p 5000:5000 microanomaly-detection
 ```
 
 Open:
@@ -112,6 +112,27 @@ Open:
 ```text
 http://localhost:5000
 ```
+
+## Free Hosting (No Credit Card)
+
+Recommended free combo:
+
+- backend: Hugging Face Spaces (Docker)
+- frontend: Vercel
+
+Set in Vercel:
+
+```text
+VITE_API_BASE_URL=https://<your-space>.hf.space/api
+```
+
+Optional strict CORS in backend host:
+
+```text
+CORS_ORIGINS=https://<your-vercel-project>.vercel.app
+```
+
+If you do not set `CORS_ORIGINS`, backend defaults to allowing all origins.
 
 ### Docker Compose
 

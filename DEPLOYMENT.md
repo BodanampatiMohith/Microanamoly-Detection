@@ -10,6 +10,47 @@ Frontend-only deployment is not enough for the real system because:
 - the backend performs EVM processing, feature extraction, and anomaly detection
 - the dashboard depends on `/api/process_frame` and other Flask endpoints
 
+## Free Option (No Credit Card)
+
+Use this split deployment:
+
+- backend on Hugging Face Spaces (Docker)
+- frontend on Vercel
+
+This is the best no-card path for demo and portfolio usage.
+Note: free tiers may sleep when idle.
+
+## Hugging Face Backend + Vercel Frontend Steps
+
+### 1. Deploy backend to Hugging Face Space
+
+1. Create a Hugging Face account.
+2. Create a new Space and choose `Docker` SDK.
+3. Push this repository content to that Space.
+4. In Space Variables, set:
+   - `PORT=7860`
+   - Optional strict CORS:
+     - `CORS_ORIGINS=https://<your-vercel-project>.vercel.app`
+5. Wait for build to finish, then test:
+   - `https://<space-name>.hf.space/api/health`
+
+### 2. Deploy frontend to Vercel
+
+1. Import this GitHub repo into Vercel.
+2. Set Root Directory to `frontend`.
+3. Build command: `npm run build`
+4. Output directory: `dist`
+5. Set environment variable:
+   - `VITE_API_BASE_URL=https://<space-name>.hf.space/api`
+6. Deploy.
+
+### 3. Verify end to end
+
+1. Open your Vercel URL.
+2. Allow webcam access.
+3. Confirm backend badge shows connected.
+4. Start monitoring and verify charts update.
+
 ## Recommended Deployment
 
 Use the root `Dockerfile`.
@@ -25,7 +66,7 @@ That image:
 
 ```bash
 docker build -t microanomaly-detection .
-docker run -p 5000:5000 microanomaly-detection
+docker run -e PORT=5000 -p 5000:5000 microanomaly-detection
 ```
 
 Open:
