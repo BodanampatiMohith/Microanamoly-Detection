@@ -14,9 +14,11 @@ FROM python:3.10-slim
 WORKDIR /app/backend
 
 RUN apt-get update && apt-get install -y \
+    libgl1 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./
