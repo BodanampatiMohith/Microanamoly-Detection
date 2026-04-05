@@ -1,3 +1,12 @@
+---
+title: microanomaly-backend
+emoji: "🛠️"
+colorFrom: blue
+colorTo: cyan
+sdk: docker
+pinned: false
+---
+
 # Microanomaly Detection System
 
 Full-stack vibration monitoring system that captures webcam frames in the browser, processes them with a Flask backend, and displays live anomaly metrics in a professional React dashboard.
