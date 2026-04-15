@@ -9,27 +9,28 @@ pinned: false
 
 # Microanomaly Detection System
 
-Full-stack vibration monitoring system that captures webcam frames in the browser, processes them with a Flask backend, and displays live anomaly metrics in a professional React dashboard.
+A full-stack real-time vibration monitoring project using a webcam feed, Eulerian Video Magnification (EVM), feature extraction, and anomaly detection.
 
-## Current Status
+The system has two parts:
+- Frontend dashboard (React + Vite) for camera capture, controls, and graphs.
+- Backend API (Flask + OpenCV + SciPy + scikit-learn) for signal processing and anomaly scoring.
 
-The project is wired end to end.
+## What This Project Does
 
-- Frontend dev server proxies `/api` to Flask during local development.
-- The production build is emitted into `backend/static` so Flask can serve the dashboard and API from one service.
-- The backend API was smoke-tested on April 6, 2026 with:
-  - `GET /api/health`
-  - `GET /api/runtime/evm`
-  - `POST /api/process_frame`
-- The frontend production build was also verified with `npm run build`.
+1. Captures webcam frames in real time.
+2. Applies ROI-based processing and motion magnification.
+3. Extracts vibration features (time + frequency domain).
+4. Computes anomaly status (`Normal` or `Abnormal`).
+5. Visualizes live waveform, FFT spectrum, and system metrics.
 
-## Stack
+## Tech Stack
 
-- Frontend: React 18, Vite, Recharts
-- Backend: Flask, OpenCV, NumPy, SciPy, scikit-learn
-- Deployment: Docker, Gunicorn
+- Frontend: React 18, Vite 5, Recharts
+- Backend: Flask, Flask-CORS, OpenCV, NumPy, SciPy, scikit-learn
+- Runtime server: Gunicorn
+- Deployment: Docker, Hugging Face Spaces, Vercel
 
-## Project Structure
+## Repository Structure
 
 ```text
 Microanamoly-detection/
@@ -37,24 +38,67 @@ Microanamoly-detection/
 |   |-- app.py
 |   |-- requirements.txt
 |   |-- src/
-|   `-- static/
+|   |-- static/
 |-- frontend/
+|   |-- src/
 |   |-- package.json
 |   |-- vite.config.js
-|   `-- src/
+|   `-- vercel.json
 |-- data/
-|-- docker-compose.yml
 |-- Dockerfile
-|-- QUICK_START.md
-|-- DEPLOYMENT.md
+|-- docker-compose.yml
+|-- vercel.json
 `-- README.md
 ```
 
+## UI Guide (Buttons and Controls)
+
+### Top Header Buttons
+
+- `Backend Connected / Backend Disconnected`
+  - Live connectivity indicator from `/api/health`.
+- `RESET SYSTEM`
+  - Calls backend reset endpoint and clears local dashboard history/state.
+- `PERFORMANCE`
+  - Toggles performance monitor panel (FPS, frame time, memory, dropped frames).
+
+### Main Control Panel
+
+- `Start Monitoring / Stop Monitoring`
+  - Starts or stops sending captured webcam frames to backend processing.
+- `Motion Amplification Factor` slider
+  - Updates runtime EVM amplification.
+- `Frequency Band Selection` (`Low`, `High`)
+  - Updates runtime EVM band-pass frequencies.
+- `Region of Interest (ROI)` inputs (`X`, `Y`, `Width`, `Height`)
+  - Selects the frame region used for analysis.
+
+### Visual Panels
+
+- `RAW VIDEO FEED`
+  - Current camera frame with ROI overlay returned by backend.
+- `MOTION MAGNIFIED OUTPUT`
+  - EVM-amplified output.
+- `TIME-DOMAIN VIBRATION WAVEFORM`
+  - Recent motion signal trend.
+- `FFT SPECTRUM ANALYSIS`
+  - Frequency-domain magnitude chart.
+
+## How Processing Works (End-to-End)
+
+1. Frontend captures frame as base64 JPEG.
+2. Frame + ROI are posted to `POST /api/process_frame`.
+3. Backend decodes frame and extracts ROI.
+4. EVM pipeline magnifies subtle motion.
+5. Motion signal is extracted and buffered.
+6. Features are computed (`rms`, `variance`, `dominant_frequency`, `spectral_entropy`, etc.).
+7. Rule-based detector computes anomaly index and status.
+8. Optional ML detector is used if trained model exists.
+9. Backend returns processed frames + metrics for dashboard rendering.
+
 ## Local Development
 
-You need both the backend and frontend running during development.
-
-### 1. Start the backend
+### 1) Start backend
 
 ```powershell
 cd backend
@@ -70,7 +114,7 @@ Backend URL:
 http://127.0.0.1:5000
 ```
 
-### 2. Start the frontend
+### 2) Start frontend
 
 Open a second terminal:
 
@@ -86,30 +130,18 @@ Frontend URL:
 http://localhost:3000
 ```
 
-### 3. Open the dashboard
+### 3) Run app
 
-Open `http://localhost:3000` and allow webcam access.
+- Open `http://localhost:3000`
+- Allow camera permission
+- Confirm header shows `Backend Connected`
+- Click `Start Monitoring`
 
-The header should show `Backend Connected` once Flask is running.
+## Deployment Modes
 
-## Production / Deployment
+## A) Single service (recommended for easiest demo)
 
-For the real app, frontend-only deployment is not enough.
-
-Why:
-
-- the React app captures frames
-- the Flask backend processes frames and computes anomaly metrics
-- without the backend, the dashboard has no processing pipeline
-
-Recommended deployment:
-
-- deploy one service using the root `Dockerfile`
-- let that service serve both the API and the built frontend
-
-This is the simplest and most reliable setup because the browser and API share the same origin.
-
-### Build and run with Docker
+Use root Dockerfile so backend serves both API and frontend.
 
 ```bash
 docker build -t microanomaly-detection .
@@ -122,49 +154,51 @@ Open:
 http://localhost:5000
 ```
 
-## Free Hosting (No Credit Card)
+## B) Split deployment (Vercel frontend + Hugging Face backend)
 
-Recommended free combo:
+Current repo is configured for this.
 
-- backend: Hugging Face Spaces (Docker)
-- frontend: Vercel
+- Vercel frontend uses `/api/*` rewrites to:
+  - `https://mohith0108-microanomaly-backend.hf.space/api/:path*`
+- Backend CORS should include Vercel domain when strict mode is used.
 
-Set in Vercel:
+### Required Vercel settings
 
-```text
-VITE_API_BASE_URL=https://<your-space>.hf.space/api
-```
+If project root is `frontend`:
+- Root Directory: `frontend`
+- Build Command: `npm run build`
+- Output Directory: `dist`
 
-Optional strict CORS in backend host:
+If project root is repository root:
+- root `vercel.json` already defines build/output for `frontend`.
 
-```text
-CORS_ORIGINS=https://<your-vercel-project>.vercel.app
-```
+## Environment Variables
 
-If you do not set `CORS_ORIGINS`, backend defaults to allowing all origins.
-
-### Docker Compose
+### Frontend (`frontend/.env.local`)
 
 ```bash
-docker-compose up --build
+VITE_API_BASE_URL=http://localhost:5000
+VITE_BUILD_OUT_DIR=dist
 ```
 
-Open:
+Notes:
+- In production, frontend now prefers same-origin `/api` first.
+- You can still set `VITE_API_BASE_URL` for custom backends.
 
-```text
-http://localhost:5000
+### Backend (`backend/.env`)
+
+```bash
+PORT=5000
+CORS_ORIGINS=*
 ```
 
-## API Notes
+For stricter production CORS:
 
-The frontend API client now:
+```bash
+CORS_ORIGINS=https://your-project.vercel.app
+```
 
-- prefers same-origin `/api`
-- falls back to `http://127.0.0.1:5000/api` and `http://localhost:5000/api`
-- rejects HTML or other non-JSON responses from bad proxy or hosting setups
-- normalizes `VITE_API_BASE_URL` so both `http://host:5000` and `http://host:5000/api` work
-
-## Main API Endpoints
+## API Endpoints
 
 - `GET /api/health`
 - `GET /api/config`
@@ -180,64 +214,61 @@ The frontend API client now:
 - `POST /api/runtime/evm`
 - `POST /api/reset`
 
-## Useful Commands
+## Quick Verification Commands
 
-### Rebuild the production frontend into Flask static files
+Backend health check:
+
+```powershell
+curl http://127.0.0.1:5000/api/health
+```
+
+Hugging Face backend health check:
+
+```powershell
+curl https://mohith0108-microanomaly-backend.hf.space/api/health
+```
+
+Production frontend build test:
 
 ```powershell
 cd frontend
-npm install
 npm run build
-```
-
-### Run a quick backend smoke test
-
-```powershell
-cd backend
-.\venv\Scripts\python.exe -c "from app import app; client=app.test_client(); print(client.get('/api/health').get_json())"
 ```
 
 ## Troubleshooting
 
-### Frontend shows `Backend Disconnected`
+### Vercel shows `404 NOT_FOUND`
 
-- Make sure Flask is running on port `5000`
-- Refresh the page after the backend starts
-- Confirm `http://127.0.0.1:5000/api/health` returns JSON
+- Check Vercel Root Directory (`frontend` not `Frontend`).
+- Ensure latest commit has updated `vercel.json` config.
 
-### Frontend loads but charts do not update
+### Vercel UI loads but `Backend Disconnected`
 
-- Allow camera permission in the browser
-- Start monitoring from the control panel
-- Check Flask logs for `/api/process_frame` errors
+- Ensure `/api/*` rewrite is present in Vercel config.
+- Confirm HF backend health endpoint returns JSON.
+- Confirm backend CORS allows Vercel domain (if strict CORS enabled).
 
-### Production deployment shows the UI but API does not work
+### Camera works but graphs do not update
 
-- deploy the whole project with the root `Dockerfile`
-- do not deploy only the frontend unless you intentionally point it at a separate public backend with `VITE_API_BASE_URL`
+- Click `Start Monitoring`.
+- Check browser console/network for `/api/process_frame` errors.
+- Verify ROI dimensions are valid and not outside frame bounds.
 
-## GitHub Update Workflow
+## Notes on ML
 
-After reviewing the changes locally:
+Rule-based anomaly detection is always available.
+Optional ML detection is used only when model file exists:
 
-```bash
-git status
-git add README.md QUICK_START.md QUICKSTART.md DEPLOYMENT.md SYSTEM_STATUS.md SETUP_COMPLETE.md PROJECT_SUMMARY.md setup.bat setup.sh frontend/src/services/api.js
-git commit -m "Fix backend/frontend integration and refresh docs"
-git push origin main
+```text
+data/models/anomaly_model.pkl
 ```
 
-If you want to include the freshly built production assets too:
+Training utilities are in:
 
-```bash
-git add backend/static
-git commit -m "Update production build assets"
-git push origin main
+```text
+backend/src/anomaly/train_model.py
 ```
 
-## Docs
+## License / Academic Use
 
-- [QUICK_START.md](./QUICK_START.md)
-- [QUICKSTART.md](./QUICKSTART.md)
-- [DEPLOYMENT.md](./DEPLOYMENT.md)
-- [SYSTEM_STATUS.md](./SYSTEM_STATUS.md)
+This project is suitable for academic demonstration of computer vision + signal processing + anomaly detection in predictive maintenance workflows.

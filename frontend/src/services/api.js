@@ -17,8 +17,20 @@ const normalizeApiBase = (base) => {
 };
 
 const configuredApiBase = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
-const defaultApiCandidates = ["/api", "http://127.0.0.1:5000/api", "http://localhost:5000/api"];
-const API_CANDIDATES = (configuredApiBase ? [configuredApiBase] : defaultApiCandidates).filter(Boolean);
+const sameOriginApiBase = "/api";
+const isLocalHost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+const localFallbackCandidates = isLocalHost
+  ? ["http://127.0.0.1:5000/api", "http://localhost:5000/api"]
+  : [];
+
+const API_CANDIDATES = [
+  sameOriginApiBase,
+  configuredApiBase,
+  ...localFallbackCandidates,
+].filter(Boolean).filter((value, index, array) => array.indexOf(value) === index);
 
 let activeApiBase = API_CANDIDATES[0];
 
