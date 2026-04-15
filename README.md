@@ -269,6 +269,58 @@ Training utilities are in:
 backend/src/anomaly/train_model.py
 ```
 
+## Model Evaluation (Accuracy / Metrics)
+
+To compare models on labeled features:
+- Rule-Based
+- One-Class SVM
+- Isolation Forest
+
+### 1) Prepare labeled feature folders
+
+```text
+data/recordings/features/normal/*.json
+data/recordings/features/abnormal/*.json
+```
+
+Each JSON should include numeric keys like:
+- `rms`
+- `variance`
+- `dominant_frequency`
+- `spectral_entropy`
+- `peak_to_peak`
+
+### 2) Run evaluation script
+
+```powershell
+python backend/src/anomaly/evaluate_models.py `
+  --normal-data data/recordings/features/normal `
+  --abnormal-data data/recordings/features/abnormal
+```
+
+### 3) Read generated outputs
+
+Saved by default in:
+
+```text
+backend/evaluation/
+```
+
+Files:
+- `evaluation_results.json`
+- `evaluation_results.csv`
+- `evaluation_results.md`
+
+### 4) Report template
+
+Use:
+
+```text
+MODEL_EVALUATION_TEMPLATE.md
+```
+
+to paste final metrics into your report/PPT.
+
 ## License / Academic Use
 
 This project is suitable for academic demonstration of computer vision + signal processing + anomaly detection in predictive maintenance workflows.
