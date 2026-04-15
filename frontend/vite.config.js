@@ -1,7 +1,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const buildOutDir = process.env.VITE_BUILD_OUT_DIR || "../backend/static";
+// Default to `dist` for hosting providers like Vercel.
+// Docker/unified backend builds can still override this via VITE_BUILD_OUT_DIR.
+const buildOutDir = process.env.VITE_BUILD_OUT_DIR || "dist";
 
 export default defineConfig({
   plugins: [react()],
