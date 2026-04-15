@@ -1,6 +1,6 @@
 {
-  "buildCommand": "VITE_BUILD_OUT_DIR=dist npm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd frontend && npm ci && VITE_BUILD_OUT_DIR=dist npm run build",
+  "outputDirectory": "frontend/dist",
   "rewrites": [
     {
       "source": "/(.*)",
