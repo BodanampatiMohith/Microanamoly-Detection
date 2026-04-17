@@ -1,34 +1,55 @@
----
-title: microanomaly-backend
-emoji: "🛠️"
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
----
+# Microanomaly Detection Platform
 
-# Microanomaly Detection System
+Production-ready, full-stack system for webcam-based vibration monitoring using Eulerian Video Magnification (EVM), real-time signal processing, and anomaly detection.
 
-A full-stack real-time vibration monitoring project using a webcam feed, Eulerian Video Magnification (EVM), feature extraction, and anomaly detection.
+## Overview
 
-The system has two parts:
-- Frontend dashboard (React + Vite) for camera capture, controls, and graphs.
-- Backend API (Flask + OpenCV + SciPy + scikit-learn) for signal processing and anomaly scoring.
+This platform captures live webcam frames, applies motion magnification on a region of interest (ROI), extracts vibration features, and classifies operating condition in real time.
 
-## What This Project Does
+Primary use case:
+- predictive maintenance and vibration anomaly monitoring
 
-1. Captures webcam frames in real time.
-2. Applies ROI-based processing and motion magnification.
-3. Extracts vibration features (time + frequency domain).
-4. Computes anomaly status (`Normal` or `Abnormal`).
-5. Visualizes live waveform, FFT spectrum, and system metrics.
+Core capabilities:
+- live camera ingestion from browser
+- ROI-based EVM motion magnification
+- time-domain + frequency-domain feature extraction
+- rule-based anomaly scoring with optional ML model inference
+- operator dashboard with waveform, FFT spectrum, KPIs, and runtime controls
+- telemetry endpoints for long-running trend monitoring
+
+## Architecture
+
+High-level architecture and data flow are documented in:
+- [architecture.md](./architecture.md)
+- [DASHBOARD_ARCHITECTURE.md](./DASHBOARD_ARCHITECTURE.md)
+
+These files include Mermaid diagrams for:
+- system context
+- frontend component architecture
+- backend processing pipeline
+- live sequence flow
+- validation and state lifecycle
 
 ## Tech Stack
 
-- Frontend: React 18, Vite 5, Recharts
-- Backend: Flask, Flask-CORS, OpenCV, NumPy, SciPy, scikit-learn
-- Runtime server: Gunicorn
-- Deployment: Docker, Hugging Face Spaces, Vercel
+Frontend:
+- React 18
+- Vite 5
+- Recharts
+
+Backend:
+- Python 3.10+
+- Flask + Flask-CORS
+- OpenCV
+- NumPy, SciPy
+- scikit-learn
+- h5py
+- Gunicorn
+
+Deployment:
+- Docker (unified full-stack service)
+- Vercel (frontend)
+- Hugging Face Spaces (backend)
 
 ## Repository Structure
 
@@ -38,7 +59,12 @@ Microanamoly-detection/
 |   |-- app.py
 |   |-- requirements.txt
 |   |-- src/
-|   |-- static/
+|   |   |-- anomaly/
+|   |   |-- evm/
+|   |   |-- monitoring/
+|   |   |-- signal/
+|   |   `-- utils/
+|   `-- static/
 |-- frontend/
 |   |-- src/
 |   |-- package.json
@@ -47,72 +73,41 @@ Microanamoly-detection/
 |-- data/
 |-- Dockerfile
 |-- docker-compose.yml
-|-- vercel.json
+|-- architecture.md
 `-- README.md
 ```
 
-## UI Guide (Buttons and Controls)
+## Production Features
 
-### Top Header Buttons
+- real-time monitoring start/stop controls
+- validated runtime parameter updates (amplification, frequency band, ROI)
+- strict API input checks with clear 400 error responses
+- output quality and anomaly KPI cards in dashboard
+- explicit empty states (no synthetic chart data)
+- telemetry summary/history/window/aggregate endpoints
 
-- `Backend Connected / Backend Disconnected`
-  - Live connectivity indicator from `/api/health`.
-- `RESET SYSTEM`
-  - Calls backend reset endpoint and clears local dashboard history/state.
-- `PERFORMANCE`
-  - Toggles performance monitor panel (FPS, frame time, memory, dropped frames).
+## Prerequisites
 
-### Main Control Panel
-
-- `Start Monitoring / Stop Monitoring`
-  - Starts or stops sending captured webcam frames to backend processing.
-- `Motion Amplification Factor` slider
-  - Updates runtime EVM amplification.
-- `Frequency Band Selection` (`Low`, `High`)
-  - Updates runtime EVM band-pass frequencies.
-- `Region of Interest (ROI)` inputs (`X`, `Y`, `Width`, `Height`)
-  - Selects the frame region used for analysis.
-
-### Visual Panels
-
-- `RAW VIDEO FEED`
-  - Current camera frame with ROI overlay returned by backend.
-- `MOTION MAGNIFIED OUTPUT`
-  - EVM-amplified output.
-- `TIME-DOMAIN VIBRATION WAVEFORM`
-  - Recent motion signal trend.
-- `FFT SPECTRUM ANALYSIS`
-  - Frequency-domain magnitude chart.
-
-## How Processing Works (End-to-End)
-
-1. Frontend captures frame as base64 JPEG.
-2. Frame + ROI are posted to `POST /api/process_frame`.
-3. Backend decodes frame and extracts ROI.
-4. EVM pipeline magnifies subtle motion.
-5. Motion signal is extracted and buffered.
-6. Features are computed (`rms`, `variance`, `dominant_frequency`, `spectral_entropy`, etc.).
-7. Rule-based detector computes anomaly index and status.
-8. Optional ML detector is used if trained model exists.
-9. Backend returns processed frames + metrics for dashboard rendering.
+- Python 3.10+ installed and available in `PATH`
+- Node.js 18+ and npm
+- Webcam access in browser
 
 ## Local Development
+
+Run from repository root: `C:\Users\mohit\Downloads\Microanamoly-detection`
 
 ### 1) Start backend
 
 ```powershell
 cd backend
 python -m venv venv
-.\venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python app.py
 ```
 
 Backend URL:
-
-```text
-http://127.0.0.1:5000
-```
+- `http://127.0.0.1:5000`
 
 ### 2) Start frontend
 
@@ -125,70 +120,118 @@ npm run dev
 ```
 
 Frontend URL:
+- `http://localhost:3000`
 
-```text
-http://localhost:3000
+### 3) Run monitoring
+
+1. Open `http://localhost:3000`
+2. Allow camera permission
+3. Confirm header shows `Backend Connected`
+4. Click `Start Monitoring`
+
+## Runtime Controls and Validation
+
+Runtime updates are validated both in UI and API.
+
+Validated ranges:
+- amplification factor: `1..100`
+- cutoff low frequency: `0.1..120 Hz`
+- cutoff high frequency: `0.2..150 Hz` and `high > low`
+- ROI: `x >= 0`, `y >= 0`, `50 <= width <= 640`, `50 <= height <= 480`
+
+## API Endpoints
+
+Base path: `/api`
+
+System:
+- `GET /health`
+- `GET /config`
+- `POST /reset`
+
+ROI:
+- `GET /roi`
+- `POST /roi`
+
+Frame processing:
+- `POST /process_frame`
+
+Runtime EVM parameters:
+- `GET /runtime/evm`
+- `POST /runtime/evm`
+
+Monitoring telemetry:
+- `GET /statistics`
+- `GET /monitoring/summary`
+- `GET /monitoring/history?points=500`
+- `GET /monitoring/window?minutes=60`
+- `GET /monitoring/aggregate?hours=24`
+
+## Process Frame Contract
+
+`POST /api/process_frame`
+
+Request body:
+
+```json
+{
+  "image": "data:image/jpeg;base64,...",
+  "roi": { "x": 100, "y": 100, "width": 300, "height": 200 }
+}
 ```
 
-### 3) Run app
+Response includes:
+- `magnified_frame` (base64 JPEG)
+- `roi_frame` (base64 JPEG with ROI box)
+- `anomaly_detection` status/index
+- `features` (RMS, variance, dominant frequency, entropy, spectrum points)
+- `motion_signal` and `evm_meta`
+- timing and frame index
 
-- Open `http://localhost:3000`
-- Allow camera permission
-- Confirm header shows `Backend Connected`
-- Click `Start Monitoring`
+## Model Training (Optional)
 
-## Deployment Modes
+If you want ML inference in addition to rule-based detection, train and save a model:
 
-## A) Single service (recommended for easiest demo)
+```powershell
+python backend/src/anomaly/train_model.py --normal-data data/FeatureEntire.mat --mat --model-type svm --output data/models/anomaly_model.pkl
+```
 
-Use root Dockerfile so backend serves both API and frontend.
+Then restart backend.
+
+Model file location expected by backend:
+- `data/models/anomaly_model.pkl`
+
+## Build and Deployment
+
+### Option A: Unified Docker deployment (recommended)
+
+Build and run full stack (frontend + backend in one container):
 
 ```bash
 docker build -t microanomaly-detection .
 docker run -e PORT=5000 -p 5000:5000 microanomaly-detection
 ```
 
-Open:
+Access app at:
+- `http://localhost:5000`
 
-```text
-http://localhost:5000
-```
+### Option B: Split deployment (Vercel + Hugging Face)
 
-## B) Split deployment (Vercel frontend + Hugging Face backend)
+Current repo includes rewrites for this pattern.
 
-Current repo is configured for this.
-
-- Vercel frontend uses `/api/*` rewrites to:
-  - `https://mohith0108-microanomaly-backend.hf.space/api/:path*`
-- Backend CORS should include Vercel domain when strict mode is used.
-
-### Required Vercel settings
-
-If project root is `frontend`:
-- Root Directory: `frontend`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-
-If project root is repository root:
-- root `vercel.json` already defines build/output for `frontend`.
+- Frontend: Vercel using `frontend/vercel.json` or root `vercel.json`
+- Backend: Hugging Face Space serving `/api/*`
 
 ## Environment Variables
 
-### Frontend (`frontend/.env.local`)
-
-```bash
-VITE_API_BASE_URL=http://localhost:5000
-VITE_BUILD_OUT_DIR=dist
-```
-
-Notes:
-- In production, frontend now prefers same-origin `/api` first.
-- You can still set `VITE_API_BASE_URL` for custom backends.
-
 ### Backend (`backend/.env`)
+
+Use [backend/.env.example](./backend/.env.example) as template.
+
+Common values:
 
 ```bash
 PORT=5000
+DEBUG=False
 CORS_ORIGINS=*
 ```
 
@@ -198,23 +241,23 @@ For stricter production CORS:
 CORS_ORIGINS=https://your-project.vercel.app
 ```
 
-## API Endpoints
+### Frontend (`frontend/.env.local`)
 
-- `GET /api/health`
-- `GET /api/config`
-- `GET /api/roi`
-- `POST /api/roi`
-- `POST /api/process_frame`
-- `GET /api/statistics`
-- `GET /api/monitoring/summary`
-- `GET /api/monitoring/history`
-- `GET /api/monitoring/window`
-- `GET /api/monitoring/aggregate`
-- `GET /api/runtime/evm`
-- `POST /api/runtime/evm`
-- `POST /api/reset`
+Use [frontend/.env.example](./frontend/.env.example) as template.
 
-## Quick Verification Commands
+```bash
+VITE_API_BASE_URL=http://localhost:5000
+VITE_BUILD_OUT_DIR=dist
+```
+
+## Validation and Build Checks
+
+Frontend production build:
+
+```powershell
+cd frontend
+npm run build
+```
 
 Backend health check:
 
@@ -222,105 +265,40 @@ Backend health check:
 curl http://127.0.0.1:5000/api/health
 ```
 
-Hugging Face backend health check:
-
-```powershell
-curl https://mohith0108-microanomaly-backend.hf.space/api/health
-```
-
-Production frontend build test:
-
-```powershell
-cd frontend
-npm run build
-```
-
 ## Troubleshooting
 
-### Vercel shows `404 NOT_FOUND`
+### Backend disconnected in UI
 
-- Check Vercel Root Directory (`frontend` not `Frontend`).
-- Ensure latest commit has updated `vercel.json` config.
+- confirm Flask is running
+- check `http://127.0.0.1:5000/api/health`
+- ensure frontend dev server proxy is active (`vite.config.js`)
 
-### Vercel UI loads but `Backend Disconnected`
+### Camera opens but metrics do not update
 
-- Ensure `/api/*` rewrite is present in Vercel config.
-- Confirm HF backend health endpoint returns JSON.
-- Confirm backend CORS allows Vercel domain (if strict CORS enabled).
+- ensure monitoring is started (`Start Monitoring`)
+- inspect browser network calls to `/api/process_frame`
+- verify ROI dimensions are valid and within frame bounds
 
-### Camera works but graphs do not update
+### Runtime updates rejected
 
-- Click `Start Monitoring`.
-- Check browser console/network for `/api/process_frame` errors.
-- Verify ROI dimensions are valid and not outside frame bounds.
+- check validation ranges in this README
+- API returns 400 with descriptive validation message
 
-## Notes on ML
+### PowerShell virtual environment activation issue
 
-Rule-based anomaly detection is always available.
-Optional ML detection is used only when model file exists:
-
-```text
-data/models/anomaly_model.pkl
-```
-
-Training utilities are in:
-
-```text
-backend/src/anomaly/train_model.py
-```
-
-## Model Evaluation (Accuracy / Metrics)
-
-To compare models on labeled features:
-- Rule-Based
-- One-Class SVM
-- Isolation Forest
-
-### 1) Prepare labeled feature folders
-
-```text
-data/recordings/features/normal/*.json
-data/recordings/features/abnormal/*.json
-```
-
-Each JSON should include numeric keys like:
-- `rms`
-- `variance`
-- `dominant_frequency`
-- `spectral_entropy`
-- `peak_to_peak`
-
-### 2) Run evaluation script
+If script execution is blocked:
 
 ```powershell
-python backend/src/anomaly/evaluate_models.py `
-  --normal-data data/recordings/features/normal `
-  --abnormal-data data/recordings/features/abnormal
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-### 3) Read generated outputs
+## Security and Operational Notes
 
-Saved by default in:
+- validate and sanitize all runtime inputs in both client and server
+- restrict `CORS_ORIGINS` in production
+- avoid committing large raw data files or trained artifacts unless intentionally versioned
+- run with Gunicorn in production, not Flask debug server
 
-```text
-backend/evaluation/
-```
+## License
 
-Files:
-- `evaluation_results.json`
-- `evaluation_results.csv`
-- `evaluation_results.md`
-
-### 4) Report template
-
-Use:
-
-```text
-MODEL_EVALUATION_TEMPLATE.md
-```
-
-to paste final metrics into your report/PPT.
-
-## License / Academic Use
-
-This project is suitable for academic demonstration of computer vision + signal processing + anomaly detection in predictive maintenance workflows.
+Add your preferred license file (for example MIT/Apache-2.0) and update this section accordingly.

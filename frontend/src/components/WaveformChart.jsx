@@ -10,23 +10,42 @@ import {
 } from "recharts";
 
 export const WaveformChart = ({ data = [], title = "Time-Domain Waveform" }) => {
-  // Generate sample data if none provided
   const chartData = useMemo(() => {
     if (!Array.isArray(data) || data.length === 0) {
-      // Generate synthetic waveform data for demo
-      return Array.from({ length: 200 }, (_, i) => ({
-        time: i,
-        amplitude:
-          Math.sin((i / 30) * Math.PI * 2) * 0.6 +
-          Math.sin((i / 80) * Math.PI * 2) * 0.3 +
-          (Math.random() - 0.5) * 0.2,
-      }));
+      return [];
     }
+
     return data.slice(-200).map((val, idx) => ({
       time: idx,
       amplitude: typeof val === "number" ? val : val.amplitude || 0,
     }));
   }, [data]);
+
+  const stats = useMemo(() => {
+    if (!chartData.length) {
+      return {
+        sampleCount: 0,
+        maxAmplitude: 0,
+        rms: 0,
+        peakToPeak: 0,
+      };
+    }
+
+    const amplitudes = chartData.map((point) => point.amplitude);
+    const maxAmplitude = amplitudes.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+    const maxValue = amplitudes.reduce((max, value) => Math.max(max, value), Number.NEGATIVE_INFINITY);
+    const minValue = amplitudes.reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY);
+    const rms = Math.sqrt(
+      amplitudes.reduce((sum, value) => sum + value ** 2, 0) / Math.max(amplitudes.length, 1)
+    );
+
+    return {
+      sampleCount: chartData.length,
+      maxAmplitude,
+      rms,
+      peakToPeak: maxValue - minValue,
+    };
+  }, [chartData]);
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
@@ -47,86 +66,77 @@ export const WaveformChart = ({ data = [], title = "Time-Domain Waveform" }) => 
         <div className="waveform-info">
           <div className="info-item">
             <span className="info-label">Samples:</span>
-            <span className="info-value">{chartData.length}</span>
+            <span className="info-value">{stats.sampleCount}</span>
           </div>
           <div className="info-item">
             <span className="info-label">Max:</span>
-            <span className="info-value">
-              {Math.max(...chartData.map((d) => Math.abs(d.amplitude))).toFixed(3)}
-            </span>
+            <span className="info-value">{stats.maxAmplitude.toFixed(3)}</span>
           </div>
         </div>
       </div>
 
       <div className="waveform-chart">
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-            <defs>
-              <linearGradient id="waveGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="#00E5FF" stopOpacity={0.1} />
-              </linearGradient>
-              <filter id="waveGlow">
-                <feGaussianBlur stdDeviation="2" />
-              </filter>
-            </defs>
+        {chartData.length === 0 ? (
+          <div className="chart-empty-state">No waveform data yet. Start monitoring to populate this chart.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+              <defs>
+                <linearGradient id="waveGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#00E5FF" stopOpacity={0.1} />
+                </linearGradient>
+                <filter id="waveGlow">
+                  <feGaussianBlur stdDeviation="2" />
+                </filter>
+              </defs>
 
-            <CartesianGrid
-              vertical={true}
-              horizontal={true}
-              stroke="#1a3a4a"
-              strokeDasharray="3 3"
-              opacity={0.3}
-            />
+              <CartesianGrid
+                vertical={true}
+                horizontal={true}
+                stroke="#1a3a4a"
+                strokeDasharray="3 3"
+                opacity={0.3}
+              />
 
-            <XAxis
-              dataKey="time"
-              stroke="#7a8a9a"
-              style={{ fontSize: "0.75rem" }}
-              interval={Math.floor(chartData.length / 5)}
-            />
+              <XAxis
+                dataKey="time"
+                stroke="#7a8a9a"
+                style={{ fontSize: "0.75rem" }}
+                interval={Math.max(1, Math.floor(chartData.length / 5))}
+              />
 
-            <YAxis
-              domain={["dataMin - 0.1", "dataMax + 0.1"]}
-              stroke="#7a8a9a"
-              style={{ fontSize: "0.75rem" }}
-              width={35}
-            />
+              <YAxis
+                domain={["dataMin - 0.1", "dataMax + 0.1"]}
+                stroke="#7a8a9a"
+                style={{ fontSize: "0.75rem" }}
+                width={35}
+              />
 
-            <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} />
 
-            <Line
-              type="monotone"
-              dataKey="amplitude"
-              stroke="#00E5FF"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-              filter="url(#waveGlow)"
-            />
-          </LineChart>
-        </ResponsiveContainer>
+              <Line
+                type="monotone"
+                dataKey="amplitude"
+                stroke="#00E5FF"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+                filter="url(#waveGlow)"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       <div className="waveform-footer">
         <div className="measurement">
           <span className="measurement-label">RMS:</span>
-          <span className="measurement-value">
-            {(
-              Math.sqrt(
-                chartData.reduce((sum, d) => sum + d.amplitude ** 2, 0) / chartData.length
-              ) || 0
-            ).toFixed(4)}
-          </span>
+          <span className="measurement-value">{stats.rms.toFixed(4)}</span>
         </div>
         <div className="measurement">
           <span className="measurement-label">Peak-to-Peak:</span>
-          <span className="measurement-value">
-            {(
-              Math.max(...chartData.map((d) => d.amplitude)) -
-              Math.min(...chartData.map((d) => d.amplitude))
-            ).toFixed(4)}
-          </span>
+          <span className="measurement-value">{stats.peakToPeak.toFixed(4)}</span>
         </div>
       </div>
     </div>

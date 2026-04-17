@@ -3,6 +3,7 @@
  * Webcam-Based Motion Magnification for Vibration Anomaly Detection
  * Theme: Engineering Lab / Predictive Maintenance Software
  */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700&display=swap");
 
 :root {
   /* Color Palette - Professional */
@@ -49,8 +50,7 @@ body,
 #root {
   width: 100%;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-    Cantarell, sans-serif;
+  font-family: "Sora", "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background: linear-gradient(135deg, var(--color-bg-dark) 0%, var(--color-bg-secondary) 100%);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -92,6 +92,67 @@ body,
 
 .dashboard-section {
   width: 100%;
+}
+
+.ops-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+.ops-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  background: linear-gradient(140deg, rgba(14, 24, 45, 0.82), rgba(10, 16, 32, 0.85));
+  box-shadow: 0 12px 30px rgba(4, 10, 24, 0.45);
+}
+
+.ops-summary-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  font-weight: 600;
+}
+
+.ops-summary-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #67e8f9;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.ops-summary-chip {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+}
+
+.ops-summary-chip.tone-normal {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(22, 101, 52, 0.35);
+}
+
+.ops-summary-chip.tone-warning {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(120, 53, 15, 0.35);
+}
+
+.ops-summary-chip.tone-fault {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(127, 29, 29, 0.35);
 }
 
 /* ==================== VIDEO SECTION ==================== */
@@ -399,6 +460,21 @@ body,
   flex: 1;
   min-height: 250px;
   margin-bottom: var(--spacing-md);
+}
+
+.chart-empty-state {
+  min-height: 250px;
+  border: 1px dashed rgba(56, 189, 248, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(7, 16, 30, 0.55);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.2px;
 }
 
 .waveform-footer,
@@ -871,7 +947,7 @@ body,
 .band-info {
   font-size: 0.8rem;
   color: var(--color-accent-cyan);
-  font-family: "Courier New", monospace;
+  font-family: "IBM Plex Mono", monospace;
   font-weight: 600;
 }
 
@@ -933,6 +1009,53 @@ body,
 
 .btn-text {
   letter-spacing: 0.3px;
+}
+
+.control-buttons-secondary {
+  border-top: none;
+  padding-top: 0;
+}
+
+.btn-secondary {
+  background: rgba(30, 64, 175, 0.25);
+  color: #bfdbfe;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.32);
+}
+
+.btn-apply {
+  background: linear-gradient(135deg, #38bdf8, #22c55e);
+  color: #04151d;
+  border: 1px solid rgba(125, 211, 252, 0.7);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.32);
+}
+
+.btn-apply:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(16, 185, 129, 0.42);
+}
+
+.validation-message {
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.2px;
+}
+
+.validation-error {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.38);
+}
+
+.validation-success {
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, 0.35);
 }
 
 .floating-monitor-action {
@@ -1008,6 +1131,10 @@ body,
     gap: var(--spacing-sm);
   }
 
+  .ops-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .charts-grid {
     grid-template-columns: 1fr;
   }
@@ -1060,5 +1187,9 @@ body,
     right: 0.75rem;
     bottom: 0.75rem;
     width: calc(100vw - 1.5rem);
+  }
+
+  .ops-summary-grid {
+    grid-template-columns: 1fr;
   }
 }

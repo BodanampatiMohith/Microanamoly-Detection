@@ -8,8 +8,8 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# For .mat file support
+import h5py
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
@@ -37,6 +37,32 @@ def collect_features_from_folder(folder_path: str, label: str) -> list:
         except Exception as e:
             print(f"Error reading {json_file}: {e}")
     
+    return features_list
+
+def collect_features_from_mat(mat_path: str, label: str) -> list:
+    """
+    Collect feature vectors from a MATLAB .mat (v7.3/HDF5) file.
+    Expects a dataset named 'featureAll' with shape (1, N) or (N, M).
+    Each row is a feature vector.
+    """
+    features_list = []
+    with h5py.File(mat_path, 'r') as f:
+        if 'featureAll' not in f:
+            raise ValueError("featureAll not found in .mat file")
+        data = f['featureAll']
+        arr = data[()]
+        # If shape is (1, N), transpose to (N,)
+        if arr.shape[0] == 1:
+            arr = arr[0]
+        # If still 1D, wrap as list of lists
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        # Use generic feature names
+        feature_names = [f"f{i+1}" for i in range(arr.shape[1])]
+        for row in arr:
+            feat = {fname: float(val) for fname, val in zip(feature_names, row)}
+            feat["label"] = label
+            features_list.append(feat)
     return features_list
 
 
@@ -145,7 +171,9 @@ def save_model(model, scaler, feature_names: list, output_path: str):
         "feature_names": feature_names,
     }
     
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     
     with open(output_path, "wb") as f:
         pickle.dump(model_dict, f)
@@ -157,8 +185,9 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Train anomaly detection model")
-    parser.add_argument("--normal-data", required=True, help="Folder with normal operation features")
-    parser.add_argument("--abnormal-data", help="Folder with abnormal operation features")
+    parser.add_argument("--normal-data", required=True, help="Folder with normal operation features or .mat file")
+    parser.add_argument("--abnormal-data", help="Folder with abnormal operation features or .mat file")
+    parser.add_argument("--mat", action="store_true", help="Set this flag if input is a .mat file (v7.3)")
     parser.add_argument("--model-type", choices=["svm", "isolation"], default="svm",
                        help="Model type to train")
     parser.add_argument("--output", default="anomaly_model.pkl", help="Output model path")
@@ -167,13 +196,19 @@ if __name__ == "__main__":
     
     # Collect data
     print("Collecting normal operation features...")
-    normal_features = collect_features_from_folder(args.normal_data, "normal")
+    if args.mat:
+        normal_features = collect_features_from_mat(args.normal_data, "normal")
+    else:
+        normal_features = collect_features_from_folder(args.normal_data, "normal")
     print(f"Found {len(normal_features)} normal samples")
-    
+
     abnormal_features = []
     if args.abnormal_data:
         print("Collecting abnormal operation features...")
-        abnormal_features = collect_features_from_folder(args.abnormal_data, "abnormal")
+        if args.mat:
+            abnormal_features = collect_features_from_mat(args.abnormal_data, "abnormal")
+        else:
+            abnormal_features = collect_features_from_folder(args.abnormal_data, "abnormal")
         print(f"Found {len(abnormal_features)} abnormal samples")
     
     # Prepare data

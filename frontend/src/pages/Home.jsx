@@ -16,6 +16,13 @@ const DEFAULT_FREQUENCY_BAND = {
   high: 30,
 };
 
+const normalizeRoi = (nextRoi) => ({
+  x: Math.max(0, Math.round(nextRoi?.x ?? 0)),
+  y: Math.max(0, Math.round(nextRoi?.y ?? 0)),
+  width: Math.min(640, Math.max(50, Math.round(nextRoi?.width ?? 50))),
+  height: Math.min(480, Math.max(50, Math.round(nextRoi?.height ?? 50))),
+});
+
 export const Home = () => {
   const [roi, setRoi] = useState(DEFAULT_ROI);
   const [processResult, setProcessResult] = useState(null);
@@ -34,12 +41,9 @@ export const Home = () => {
   const waveformHistoryRef = useRef([]);
 
   const clampRoi = useCallback((nextRoi) => {
-    setRoi({
-      x: Math.max(0, Math.round(nextRoi.x || 0)),
-      y: Math.max(0, Math.round(nextRoi.y || 0)),
-      width: Math.max(50, Math.round(nextRoi.width || 50)),
-      height: Math.max(50, Math.round(nextRoi.height || 50)),
-    });
+    const safeRoi = normalizeRoi(nextRoi);
+    setRoi(safeRoi);
+    return safeRoi;
   }, []);
 
   const syncRuntimeState = useCallback(async () => {
@@ -177,10 +181,12 @@ export const Home = () => {
   }, []);
 
   const handleAmplificationChange = useCallback(async (value) => {
-    setCurrentAmplification(value);
+    const safeValue = Math.max(1, Math.min(100, Number.isFinite(value) ? value : 20));
+    setCurrentAmplification(safeValue);
 
     try {
-      await apiService.updateAmplification(value);
+      await apiService.updateAmplification(safeValue);
+      setError(null);
     } catch (err) {
       console.error("Error updating amplification:", err);
       setError("Failed to update amplification factor.");
@@ -188,23 +194,40 @@ export const Home = () => {
   }, []);
 
   const handleFrequencyBandChange = useCallback(async (newBand) => {
+    const lowCandidate = Number.isFinite(newBand.low) ? newBand.low : DEFAULT_FREQUENCY_BAND.low;
+    const low = Math.min(120, Math.max(0.1, lowCandidate));
+    const highCandidate = Number.isFinite(newBand.high) ? newBand.high : DEFAULT_FREQUENCY_BAND.high;
+    const high = Math.min(150, Math.max(low + 0.1, highCandidate));
+
     const safeBand = {
-      low: Math.max(0.1, Number.isFinite(newBand.low) ? newBand.low : DEFAULT_FREQUENCY_BAND.low),
-      high: Math.max(
-        (Number.isFinite(newBand.low) ? newBand.low : DEFAULT_FREQUENCY_BAND.low) + 0.1,
-        Number.isFinite(newBand.high) ? newBand.high : DEFAULT_FREQUENCY_BAND.high
-      ),
+      low: Math.round(low * 10) / 10,
+      high: Math.round(high * 10) / 10,
     };
 
     setFrequencyBand(safeBand);
 
     try {
       await apiService.updateFrequencyBand(safeBand);
+      setError(null);
     } catch (err) {
       console.error("Error updating frequency band:", err);
       setError("Failed to update frequency band.");
     }
   }, []);
+
+  const handleRoiChange = useCallback(
+    async (nextRoi) => {
+      const safeRoi = clampRoi(nextRoi);
+      try {
+        await apiService.updateROI(safeRoi);
+        setError(null);
+      } catch (err) {
+        console.error("Error updating ROI:", err);
+        setError("Failed to update ROI.");
+      }
+    },
+    [clampRoi]
+  );
 
   const handleReset = useCallback(async () => {
     try {
@@ -231,9 +254,12 @@ export const Home = () => {
             height: 100vh;
             display: flex;
             flex-direction: column;
-            background: linear-gradient(135deg, #0b0f1a 0%, #111827 100%);
+            background:
+              radial-gradient(circle at 12% 18%, rgba(56, 189, 248, 0.18), transparent 36%),
+              radial-gradient(circle at 88% 10%, rgba(34, 197, 94, 0.14), transparent 34%),
+              linear-gradient(150deg, #050914 0%, #101a2e 55%, #0d1424 100%);
             color: #e4e6eb;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: "Sora", "Segoe UI", Roboto, sans-serif;
             overflow: hidden;
           }
 
@@ -243,8 +269,9 @@ export const Home = () => {
             align-items: center;
             gap: 1rem;
             padding: 1rem 2rem;
-            background: rgba(20, 30, 50, 0.4);
-            border-bottom: 1px solid rgba(0, 229, 255, 0.1);
+            background: rgba(12, 23, 44, 0.75);
+            border-bottom: 1px solid rgba(56, 189, 248, 0.28);
+            backdrop-filter: blur(10px);
             flex-shrink: 0;
           }
 
@@ -252,12 +279,13 @@ export const Home = () => {
             font-size: 1.3rem;
             font-weight: 700;
             letter-spacing: 1px;
-            color: #00e5ff;
+            color: #67e8f9;
+            text-transform: uppercase;
           }
 
           .app-header-subtitle {
             font-size: 0.8rem;
-            color: #a0a9b8;
+            color: #b8c4d6;
             letter-spacing: 0.5px;
             margin-top: 0.25rem;
           }
@@ -275,11 +303,11 @@ export const Home = () => {
             align-items: center;
             gap: 0.5rem;
             padding: 0.5rem 1rem;
-            background: rgba(0, 229, 255, 0.1);
-            border: 1px solid rgba(0, 229, 255, 0.3);
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
             border-radius: 0.5rem;
             font-size: 0.8rem;
-            color: #a0a9b8;
+            color: #c7d5ea;
           }
 
           .status-dot {
@@ -311,20 +339,20 @@ export const Home = () => {
           }
 
           .reset-btn {
-            background: linear-gradient(135deg, #00e5ff, #1e90ff);
-            border: 1px solid #00e5ff;
-            color: #0b0f1a;
+            background: linear-gradient(135deg, #67e8f9, #38bdf8);
+            border: 1px solid #67e8f9;
+            color: #02131a;
           }
 
           .performance-btn {
-            background: rgba(0, 229, 255, 0.1);
-            border: 1px solid rgba(0, 229, 255, 0.35);
-            color: #00e5ff;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.42);
+            color: #7dd3fc;
           }
 
           .header-btn:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 229, 255, 0.25);
+            box-shadow: 0 6px 20px rgba(56, 189, 248, 0.28);
           }
 
           .header-btn:disabled {
@@ -334,9 +362,9 @@ export const Home = () => {
 
           .error-banner {
             padding: 1rem 2rem;
-            background: rgba(255, 59, 48, 0.15);
-            border-bottom: 2px solid #ff3b30;
-            color: #ff9999;
+            background: rgba(239, 68, 68, 0.16);
+            border-bottom: 2px solid #ef4444;
+            color: #fecaca;
             font-size: 0.9rem;
             letter-spacing: 0.3px;
             flex-shrink: 0;
@@ -411,7 +439,7 @@ export const Home = () => {
           isMonitoring={isMonitoring}
           isLoading={isLoading}
           roi={roi}
-          onRoiChange={clampRoi}
+          onRoiChange={handleRoiChange}
           onStartMonitoring={handleStartMonitoring}
           onStopMonitoring={handleStopMonitoring}
           onAmplificationChange={handleAmplificationChange}

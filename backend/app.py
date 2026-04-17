@@ -20,7 +20,14 @@ from src.anomaly.rules import RuleBasedDetector
 from src.anomaly.model import MLAnomalyDetector
 from src.monitoring.telemetry import TelemetryStore
 from src.utils.roi import ROI, draw_roi_on_frame
-from src.utils.config import EVM_CONFIG, SIGNAL_CONFIG, ANOMALY_CONFIG, API_CONFIG, MONITORING_CONFIG
+from src.utils.config import (
+    EVM_CONFIG,
+    SIGNAL_CONFIG,
+    ANOMALY_CONFIG,
+    API_CONFIG,
+    MONITORING_CONFIG,
+    ROI_CONFIG,
+)
 from src.utils.error_handlers import enhanced_logger, validate_frame_data, timing_decorator, create_api_response
 
 # Setup logging
@@ -173,6 +180,80 @@ def encode_frame_to_base64(frame: np.ndarray, quality: int = 85) -> str:
         return ""
 
 
+def _to_float(value, field_name: str) -> float:
+    """Safely parse numeric inputs from API payloads."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be a numeric value")
+
+
+def normalize_roi_payload(roi_data: Dict) -> Dict:
+    """Validate and normalize ROI payload from API input."""
+    if not isinstance(roi_data, dict):
+        raise ValueError("ROI payload must be an object with x, y, width and height")
+
+    x = int(round(_to_float(roi_data.get("x", 0), "roi.x")))
+    y = int(round(_to_float(roi_data.get("y", 0), "roi.y")))
+    width = int(round(_to_float(roi_data.get("width", ROI_CONFIG.get("default_width", 300)), "roi.width")))
+    height = int(round(_to_float(roi_data.get("height", ROI_CONFIG.get("default_height", 200)), "roi.height")))
+
+    if x < 0 or y < 0:
+        raise ValueError("ROI x and y must be greater than or equal to 0")
+
+    min_width = int(ROI_CONFIG.get("min_width", 50))
+    min_height = int(ROI_CONFIG.get("min_height", 50))
+    max_width = int(API_CONFIG.get("max_frame_width", 640))
+    max_height = int(API_CONFIG.get("max_frame_height", 480))
+
+    if width < min_width or width > max_width:
+        raise ValueError(f"ROI width must be between {min_width} and {max_width}")
+    if height < min_height or height > max_height:
+        raise ValueError(f"ROI height must be between {min_height} and {max_height}")
+
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def normalize_runtime_evm_payload(data: Dict, current_low_freq: float) -> Dict:
+    """Validate and normalize runtime EVM update payload."""
+    if not isinstance(data, dict):
+        raise ValueError("Runtime EVM payload must be a JSON object")
+
+    normalized = {}
+
+    if data.get("amplification_factor") is not None:
+        amplification = _to_float(data.get("amplification_factor"), "amplification_factor")
+        if amplification < 1 or amplification > 100:
+            raise ValueError("amplification_factor must be between 1 and 100")
+        normalized["amplification_factor"] = amplification
+
+    low_freq = current_low_freq
+    if data.get("cutoff_freq_low") is not None:
+        low_freq = _to_float(data.get("cutoff_freq_low"), "cutoff_freq_low")
+        if low_freq < 0.1 or low_freq > 120:
+            raise ValueError("cutoff_freq_low must be between 0.1 and 120 Hz")
+        normalized["cutoff_freq_low"] = low_freq
+
+    if data.get("cutoff_freq_high") is not None:
+        high_freq = _to_float(data.get("cutoff_freq_high"), "cutoff_freq_high")
+        if high_freq < 0.2 or high_freq > 150:
+            raise ValueError("cutoff_freq_high must be between 0.2 and 150 Hz")
+        if high_freq <= low_freq:
+            raise ValueError("cutoff_freq_high must be greater than cutoff_freq_low")
+        normalized["cutoff_freq_high"] = high_freq
+
+    if data.get("sampling_rate") is not None:
+        sampling_rate = _to_float(data.get("sampling_rate"), "sampling_rate")
+        if sampling_rate < 1 or sampling_rate > 240:
+            raise ValueError("sampling_rate must be between 1 and 240 FPS")
+        normalized["sampling_rate"] = sampling_rate
+
+    if not normalized:
+        raise ValueError("At least one runtime EVM parameter must be provided")
+
+    return normalized
+
+
 # ==================== API Routes ====================
 
 
@@ -206,9 +287,10 @@ def get_config():
 def handle_roi():
     """Get or update ROI region."""
     if request.method == "POST":
-        roi_data = request.json
+        roi_data = request.json or {}
         try:
-            pipeline_state.update_roi(roi_data)
+            normalized_roi = normalize_roi_payload(roi_data)
+            pipeline_state.update_roi(normalized_roi)
             return jsonify(
                 {
                     "status": "success",
@@ -261,7 +343,8 @@ def process_frame():
 
         # Update ROI if provided
         if "roi" in data:
-            pipeline_state.update_roi(data["roi"])
+            normalized_roi = normalize_roi_payload(data["roi"])
+            pipeline_state.update_roi(normalized_roi)
 
         # Extract ROI region
         roi_frame = pipeline_state.roi.extract(frame)
@@ -479,11 +562,14 @@ def handle_runtime_evm():
             )
 
         data = request.json or {}
+        normalized_data = normalize_runtime_evm_payload(
+            data, current_low_freq=pipeline_state.evm_pipeline.low_freq
+        )
         updated = pipeline_state.evm_pipeline.update_parameters(
-            amplification=data.get("amplification_factor"),
-            low_freq=data.get("cutoff_freq_low"),
-            high_freq=data.get("cutoff_freq_high"),
-            sampling_rate=data.get("sampling_rate"),
+            amplification=normalized_data.get("amplification_factor"),
+            low_freq=normalized_data.get("cutoff_freq_low"),
+            high_freq=normalized_data.get("cutoff_freq_high"),
+            sampling_rate=normalized_data.get("sampling_rate"),
         )
 
         return jsonify({"status": "success", "evm": updated})
