@@ -34,7 +34,7 @@ flowchart TD
         SG([Score Generation])
     end
 
-    subgraph UI[Streamlit Web Interface]
+    subgraph UI[Web Application Interface]
         UV([Upload Video])
         DR([Display Results])
     end
@@ -126,10 +126,10 @@ Outputs:
 - `touch_classification`
 - `score_generation` (normalized quality score)
 
-### 3.6 Streamlit Web Interface
+### 3.6 Web Application Interface
 
 Responsibility:
-- Provide user workflow from upload to visualization.
+- Provide user workflow from upload to visualization through frontend + backend API.
 
 User actions:
 - Upload video.
@@ -189,7 +189,7 @@ User actions:
 
 ### 5.2 Online Inference
 
-1. User uploads video in Streamlit.
+1. User uploads video in the web interface.
 2. System runs frame extraction and tracking pipeline.
 3. System computes features.
 4. Classifier predicts touch class and score.

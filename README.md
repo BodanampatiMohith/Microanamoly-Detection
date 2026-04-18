@@ -18,7 +18,7 @@ Build an end-to-end pipeline that:
 3. Feature Extraction: compute speed ratio, control distance, direction change, and pressure factor.
 4. Machine Learning: assemble feature vector and run Random Forest classifier.
 5. Output: generate touch class and quality score.
-6. Streamlit Web Interface: upload video and display analysis results.
+6. Web Application Interface: upload video and display analysis results.
 
 ## Architecture Snapshot
 
@@ -50,7 +50,7 @@ flowchart TD
         SG([Score Generation])
     end
 
-    subgraph UI[Streamlit Web Interface]
+    subgraph UI[Web Application Interface]
         UV([Upload Video])
         DR([Display Results])
     end
@@ -95,7 +95,7 @@ flowchart TD
 - Detection: YOLOv8 (`ultralytics`)
 - Tracking: ByteTrack/DeepSORT (or equivalent tracker)
 - ML Classifier: Random Forest (`scikit-learn`)
-- UI: Streamlit
+- UI: React (Vite) frontend + Flask API backend
 - Data Processing: OpenCV, NumPy, Pandas
 
 ## Recommended Project Structure
@@ -119,7 +119,7 @@ project/
 
 1. Install required Python packages.
 2. Place trained YOLOv8 weights and Random Forest model in `models/`.
-3. Start Streamlit app.
+3. Start backend API and frontend web app.
 4. Upload a football video.
 5. Review touch class, score, and feature-level explanation.
 
