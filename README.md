@@ -1,304 +1,129 @@
-# Microanomaly Detection Platform
+﻿# Smart Analysis of Football First Touch Using Computer Vision
 
-Production-ready, full-stack system for webcam-based vibration monitoring using Eulerian Video Magnification (EVM), real-time signal processing, and anomaly detection.
+This project analyzes a football player's first touch from uploaded video and classifies touch quality using computer vision and machine learning.
 
-## Overview
+## Objective
 
-This platform captures live webcam frames, applies motion magnification on a region of interest (ROI), extracts vibration features, and classifies operating condition in real time.
+Build an end-to-end pipeline that:
+1. Reads player video.
+2. Detects and tracks the ball/player interaction.
+3. Extracts first-touch behavior features.
+4. Classifies touch quality.
+5. Generates an interpretable score for coaches and players.
 
-Primary use case:
-- predictive maintenance and vibration anomaly monitoring
+## End-to-End Workflow
 
-Core capabilities:
-- live camera ingestion from browser
-- ROI-based EVM motion magnification
-- time-domain + frequency-domain feature extraction
-- rule-based anomaly scoring with optional ML model inference
-- operator dashboard with waveform, FFT spectrum, KPIs, and runtime controls
-- telemetry endpoints for long-running trend monitoring
+1. Video Processing: extract frames from uploaded video.
+2. Detection and Tracking: run YOLOv8 detection and object tracking.
+3. Feature Extraction: compute speed ratio, control distance, direction change, and pressure factor.
+4. Machine Learning: assemble feature vector and run Random Forest classifier.
+5. Output: generate touch class and quality score.
+6. Streamlit Web Interface: upload video and display analysis results.
 
-## Architecture
+## Architecture Snapshot
 
-High-level architecture and data flow are documented in:
-- [architecture.md](./architecture.md)
-- [DASHBOARD_ARCHITECTURE.md](./DASHBOARD_ARCHITECTURE.md)
+```mermaid
+flowchart TD
+    subgraph VP[Video Processing]
+        FE([Frame Extraction])
+    end
 
-These files include Mermaid diagrams for:
-- system context
-- frontend component architecture
-- backend processing pipeline
-- live sequence flow
-- validation and state lifecycle
+    subgraph DT[Detection and Tracking]
+        YD([YOLOv8 Detection])
+        OT([Object Tracking])
+    end
 
-## Tech Stack
+    subgraph FX[Feature Extraction]
+        SR([Speed Ratio])
+        CD([Control Distance])
+        DC([Direction Change])
+        PF([Pressure Factor])
+    end
 
-Frontend:
-- React 18
-- Vite 5
-- Recharts
+    subgraph ML[Machine Learning]
+        FV([Feature Vector])
+        RF([Random Forest Classifier])
+    end
 
-Backend:
-- Python 3.10+
-- Flask + Flask-CORS
-- OpenCV
-- NumPy, SciPy
-- scikit-learn
-- h5py
-- Gunicorn
+    subgraph OUT[Output]
+        TC([Touch Classification])
+        SG([Score Generation])
+    end
 
-Deployment:
-- Docker (unified full-stack service)
-- Vercel (frontend)
-- Hugging Face Spaces (backend)
+    subgraph UI[Streamlit Web Interface]
+        UV([Upload Video])
+        DR([Display Results])
+    end
 
-## Repository Structure
+    FE --> YD
+    YD --> OT
+
+    OT --> SR
+    OT --> CD
+    OT --> DC
+    OT --> PF
+
+    SR --> FV
+    CD --> FV
+    DC --> FV
+    PF --> FV
+
+    FV --> RF
+    RF --> TC
+    RF --> SG
+
+    UV --> FE
+    TC --> DR
+    SG --> DR
+```
+
+## Features Used by the Classifier
+
+- `speed_ratio`: ratio of ball speed change around first contact.
+- `control_distance`: distance between player and ball after touch.
+- `direction_change`: angle or vector change after touch.
+- `pressure_factor`: local pressure estimate from surrounding players/space.
+
+## Predicted Classes
+
+- `Good touch`
+- `Poor touch`
+- `Pressure touch`
+
+## Suggested Tech Stack
+
+- Detection: YOLOv8 (`ultralytics`)
+- Tracking: ByteTrack/DeepSORT (or equivalent tracker)
+- ML Classifier: Random Forest (`scikit-learn`)
+- UI: Streamlit
+- Data Processing: OpenCV, NumPy, Pandas
+
+## Recommended Project Structure
 
 ```text
-Microanamoly-detection/
-|-- backend/
-|   |-- app.py
-|   |-- requirements.txt
-|   |-- src/
-|   |   |-- anomaly/
-|   |   |-- evm/
-|   |   |-- monitoring/
-|   |   |-- signal/
-|   |   `-- utils/
-|   `-- static/
-|-- frontend/
-|   |-- src/
-|   |-- package.json
-|   |-- vite.config.js
-|   `-- vercel.json
+project/
 |-- data/
-|-- Dockerfile
-|-- docker-compose.yml
+|-- models/
+|-- notebooks/
+|-- src/
+|   |-- video_processing/
+|   |-- detection_tracking/
+|   |-- feature_extraction/
+|   |-- ml/
+|   `-- app/
 |-- architecture.md
 `-- README.md
 ```
 
-## Production Features
+## High-Level Run Steps
 
-- real-time monitoring start/stop controls
-- validated runtime parameter updates (amplification, frequency band, ROI)
-- strict API input checks with clear 400 error responses
-- output quality and anomaly KPI cards in dashboard
-- explicit empty states (no synthetic chart data)
-- telemetry summary/history/window/aggregate endpoints
+1. Install required Python packages.
+2. Place trained YOLOv8 weights and Random Forest model in `models/`.
+3. Start Streamlit app.
+4. Upload a football video.
+5. Review touch class, score, and feature-level explanation.
 
-## Prerequisites
+## Notes
 
-- Python 3.10+ installed and available in `PATH`
-- Node.js 18+ and npm
-- Webcam access in browser
-
-## Local Development
-
-Run from repository root: `C:\Users\mohit\Downloads\Microanamoly-detection`
-
-### 1) Start backend
-
-```powershell
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py
-```
-
-Backend URL:
-- `http://127.0.0.1:5000`
-
-### 2) Start frontend
-
-Open a second terminal:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend URL:
-- `http://localhost:3000`
-
-### 3) Run monitoring
-
-1. Open `http://localhost:3000`
-2. Allow camera permission
-3. Confirm header shows `Backend Connected`
-4. Click `Start Monitoring`
-
-## Runtime Controls and Validation
-
-Runtime updates are validated both in UI and API.
-
-Validated ranges:
-- amplification factor: `1..100`
-- cutoff low frequency: `0.1..120 Hz`
-- cutoff high frequency: `0.2..150 Hz` and `high > low`
-- ROI: `x >= 0`, `y >= 0`, `50 <= width <= 640`, `50 <= height <= 480`
-
-## API Endpoints
-
-Base path: `/api`
-
-System:
-- `GET /health`
-- `GET /config`
-- `POST /reset`
-
-ROI:
-- `GET /roi`
-- `POST /roi`
-
-Frame processing:
-- `POST /process_frame`
-
-Runtime EVM parameters:
-- `GET /runtime/evm`
-- `POST /runtime/evm`
-
-Monitoring telemetry:
-- `GET /statistics`
-- `GET /monitoring/summary`
-- `GET /monitoring/history?points=500`
-- `GET /monitoring/window?minutes=60`
-- `GET /monitoring/aggregate?hours=24`
-
-## Process Frame Contract
-
-`POST /api/process_frame`
-
-Request body:
-
-```json
-{
-  "image": "data:image/jpeg;base64,...",
-  "roi": { "x": 100, "y": 100, "width": 300, "height": 200 }
-}
-```
-
-Response includes:
-- `magnified_frame` (base64 JPEG)
-- `roi_frame` (base64 JPEG with ROI box)
-- `anomaly_detection` status/index
-- `features` (RMS, variance, dominant frequency, entropy, spectrum points)
-- `motion_signal` and `evm_meta`
-- timing and frame index
-
-## Model Training (Optional)
-
-If you want ML inference in addition to rule-based detection, train and save a model:
-
-```powershell
-python backend/src/anomaly/train_model.py --normal-data data/FeatureEntire.mat --mat --model-type svm --output data/models/anomaly_model.pkl
-```
-
-Then restart backend.
-
-Model file location expected by backend:
-- `data/models/anomaly_model.pkl`
-
-## Build and Deployment
-
-### Option A: Unified Docker deployment (recommended)
-
-Build and run full stack (frontend + backend in one container):
-
-```bash
-docker build -t microanomaly-detection .
-docker run -e PORT=5000 -p 5000:5000 microanomaly-detection
-```
-
-Access app at:
-- `http://localhost:5000`
-
-### Option B: Split deployment (Vercel + Hugging Face)
-
-Current repo includes rewrites for this pattern.
-
-- Frontend: Vercel using `frontend/vercel.json` or root `vercel.json`
-- Backend: Hugging Face Space serving `/api/*`
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-
-Use [backend/.env.example](./backend/.env.example) as template.
-
-Common values:
-
-```bash
-PORT=5000
-DEBUG=False
-CORS_ORIGINS=*
-```
-
-For stricter production CORS:
-
-```bash
-CORS_ORIGINS=https://your-project.vercel.app
-```
-
-### Frontend (`frontend/.env.local`)
-
-Use [frontend/.env.example](./frontend/.env.example) as template.
-
-```bash
-VITE_API_BASE_URL=http://localhost:5000
-VITE_BUILD_OUT_DIR=dist
-```
-
-## Validation and Build Checks
-
-Frontend production build:
-
-```powershell
-cd frontend
-npm run build
-```
-
-Backend health check:
-
-```powershell
-curl http://127.0.0.1:5000/api/health
-```
-
-## Troubleshooting
-
-### Backend disconnected in UI
-
-- confirm Flask is running
-- check `http://127.0.0.1:5000/api/health`
-- ensure frontend dev server proxy is active (`vite.config.js`)
-
-### Camera opens but metrics do not update
-
-- ensure monitoring is started (`Start Monitoring`)
-- inspect browser network calls to `/api/process_frame`
-- verify ROI dimensions are valid and within frame bounds
-
-### Runtime updates rejected
-
-- check validation ranges in this README
-- API returns 400 with descriptive validation message
-
-### PowerShell virtual environment activation issue
-
-If script execution is blocked:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-## Security and Operational Notes
-
-- validate and sanitize all runtime inputs in both client and server
-- restrict `CORS_ORIGINS` in production
-- avoid committing large raw data files or trained artifacts unless intentionally versioned
-- run with Gunicorn in production, not Flask debug server
-
-## License
-
-Add your preferred license file (for example MIT/Apache-2.0) and update this section accordingly.
+- This documentation defines the target football first-touch pipeline architecture.
+- For detailed component design, see [architecture.md](./architecture.md).

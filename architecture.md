@@ -1,219 +1,215 @@
-# Microanomalies Detection Architecture
+﻿# Architecture: Smart Analysis of Football First Touch Using Computer Vision
 
-This document describes the current, working architecture of the system with Mermaid diagrams and plain-language explanations.
+## 1. Architecture Goal
 
-## 1) System Context
+Design an end-to-end system that converts raw football video into first-touch quality decisions and scores through detection, tracking, feature engineering, and classification.
 
-```mermaid
-flowchart LR
-    User[Operator in Browser]\nReactApp[React Frontend\nVite Build]
-    Camera[Webcam\nMediaDevices API]
-    Flask[Flask API\nbackend/app.py]
-    EVM[Motion Pipeline\nEVM + Signal + Features]
-    Detectors[Anomaly Detectors\nRule-based + Optional ML]
-    Telemetry[Telemetry Store\nIn-memory history + aggregates]
-
-    User --> ReactApp
-    Camera --> ReactApp
-    ReactApp -->|POST /api/process_frame| Flask
-    ReactApp -->|GET /api/health\nGET /api/runtime/evm\nPOST /api/runtime/evm\nPOST /api/roi\nPOST /api/reset| Flask
-    Flask --> EVM
-    EVM --> Detectors
-    Detectors --> Flask
-    Flask --> Telemetry
-    Telemetry --> Flask
-    Flask --> ReactApp
-```
-
-Explanation:
-- The browser captures webcam frames and sends them to the Flask API.
-- Flask runs EVM motion magnification, feature extraction, and anomaly scoring.
-- Results are returned to React for live charts, status cards, and controls.
-- Telemetry is persisted in memory for summary and trend endpoints.
-
-## 2) Frontend Component Architecture
+## 2. System Diagram
 
 ```mermaid
 flowchart TD
-    App[App.jsx\nErrorBoundary + Global Styles] --> Home[pages/Home.jsx\nState + API orchestration]
-
-    Home --> VideoCapture[components/VideoCapture.jsx\nWebcam frame capture]
-    Home --> Dashboard[components/ProfessionalDashboard.jsx\nMain UI layout]
-    Home --> Perf[components/PerformanceMonitor.jsx\nOptional panel]
-
-    Dashboard --> Gauge[StabilityGauge.jsx]
-    Dashboard --> Waveform[WaveformChart.jsx]
-    Dashboard --> Spectrum[SpectrumAnalyzer.jsx]
-
-    Home --> ApiSvc[services/api.js\nAPI base fallback + requests]
-    ApiSvc --> BackendAPI[/Flask API/]
-```
-
-Explanation:
-- `Home.jsx` is the state container for monitoring state, runtime settings, errors, and chart data.
-- `VideoCapture` captures frames on an interval and pushes them to `Home`.
-- `ProfessionalDashboard` renders video outputs, KPI cards, controls, and charts.
-- `api.js` handles endpoint fallback (`/api`, localhost variants) and response validation.
-
-## 3) Backend Processing Pipeline
-
-```mermaid
-flowchart TD
-    Req[POST /api/process_frame\nimage + optional ROI] --> Validate[Input Validation\nbase64 + dimensions + ROI]
-    Validate --> Decode[Decode image to OpenCV frame]
-    Decode --> ExtractROI[Extract ROI from frame]
-    ExtractROI --> EvmProc[EVM Pipeline\nTemporal filtering + amplification]
-    EvmProc --> Motion[Motion signal extraction]
-    Motion --> Features[Feature extraction\ntime + frequency domain]
-    Features --> RuleDetect[Rule-based detector]
-    Features --> MLDetect[Optional ML detector\nif model exists]
-    RuleDetect --> Response[Compose API response\nframes + metrics + statuses]
-    MLDetect --> Response
-    Response --> TelemetryWrite[Store telemetry sample]
-    TelemetryWrite --> Return[Return JSON payload]
-```
-
-Explanation:
-- Validation is done before expensive compute steps.
-- ROI extraction limits processing to the selected area.
-- The response includes magnified frame, ROI frame, feature metrics, anomaly status, and timing.
-
-## 4) Live Monitoring Sequence
-
-```mermaid
-sequenceDiagram
-    participant Browser as React UI
-    participant Capture as VideoCapture
-    participant API as Flask /api/process_frame
-    participant Pipeline as EVM + Features + Detection
-
-    loop While monitoring is ON
-        Capture->>Browser: JPEG frame (base64)
-        Browser->>API: POST frame + ROI
-        API->>Pipeline: validate -> process frame
-        Pipeline-->>API: metrics + anomaly + magnified frame
-        API-->>Browser: JSON response
-        Browser->>Browser: update waveform, spectrum, KPIs, video panels
-    end
-```
-
-Explanation:
-- The frame loop is controlled in the frontend (`isMonitoring`).
-- Each successful response updates all real-time widgets.
-- If validation fails, API returns a 400 error and UI shows an error banner.
-
-## 5) Monitoring Lifecycle State Machine
-
-```mermaid
-stateDiagram-v2
-    [*] --> Booting
-    Booting --> BackendDisconnected: health check failed
-    Booting --> Ready: health check ok
-
-    BackendDisconnected --> Ready: backend recovers
-    Ready --> Monitoring: Start Monitoring
-    Monitoring --> Ready: Stop Monitoring
-
-    Monitoring --> ErrorState: process_frame error
-    Ready --> ErrorState: invalid runtime update
-    ErrorState --> Ready: successful retry/reset
-
-    Ready --> Resetting: Reset System
-    Monitoring --> Resetting: Reset System
-    Resetting --> Ready: reset complete
-```
-
-Explanation:
-- The UI can start/stop monitoring only when backend health is good.
-- Errors are recoverable through retry or reset.
-- Reset clears runtime buffers/history and returns to a clean state.
-
-## 6) Validation Rules
-
-```mermaid
-flowchart LR
-    ROIIn[ROI input] --> ROIVal{ROI valid?}
-    ROIVal -->|No| ROIErr[400: ROI bounds/type error]
-    ROIVal -->|Yes| ROIApply[Apply ROI]
-
-    EVMIn[EVM runtime payload] --> EVMVal{Valid ranges?}
-    EVMVal -->|No| EVMErr[400: parameter validation error]
-    EVMVal -->|Yes| EVMApply[Update amplification/frequency/sampling]
-
-    FrameIn[Frame payload] --> FrameVal{Base64 + size valid?}
-    FrameVal -->|No| FrameErr[400: invalid frame]
-    FrameVal -->|Yes| FrameApply[Run processing pipeline]
-```
-
-Key enforced ranges:
-- ROI: `x >= 0`, `y >= 0`, `50 <= width <= 640`, `50 <= height <= 480`
-- Amplification: `1..100`
-- Frequency band: `0.1 <= low <= 120`, `0.2 <= high <= 150`, and `high > low`
-- Sampling rate: `1..240 FPS`
-
-## 7) Deployment View
-
-```mermaid
-flowchart LR
-    subgraph Client
-        Browser[Browser\nReact SPA]
+    subgraph VP[Video Processing]
+        FE([Frame Extraction])
     end
 
-    subgraph Server
-        FlaskApp[Flask app.py]
-        Static[backend/static\nVite build output]
+    subgraph DT[Detection and Tracking]
+        YD([YOLOv8 Detection])
+        OT([Object Tracking])
     end
 
-    Browser -->|HTTP /| FlaskApp
-    FlaskApp --> Static
-    Browser -->|HTTP /api/*| FlaskApp
+    subgraph FX[Feature Extraction]
+        SR([Speed Ratio])
+        CD([Control Distance])
+        DC([Direction Change])
+        PF([Pressure Factor])
+    end
+
+    subgraph ML[Machine Learning]
+        FV([Feature Vector])
+        RF([Random Forest Classifier])
+    end
+
+    subgraph OUT[Output]
+        TC([Touch Classification])
+        SG([Score Generation])
+    end
+
+    subgraph UI[Streamlit Web Interface]
+        UV([Upload Video])
+        DR([Display Results])
+    end
+
+    FE --> YD
+    YD --> OT
+
+    OT --> SR
+    OT --> CD
+    OT --> DC
+    OT --> PF
+
+    SR --> FV
+    CD --> FV
+    DC --> FV
+    PF --> FV
+
+    FV --> RF
+    RF --> TC
+    RF --> SG
+
+    UV --> FE
+    TC --> DR
+    SG --> DR
 ```
 
-Explanation:
-- In production, Flask serves the built frontend and API from one host.
-- In development, Vite dev server can proxy `/api` to Flask.
+## 3. Component Breakdown
 
-## 8) Data Contract (Core Response)
+### 3.1 Video Processing
 
-```mermaid
-classDiagram
-    class ProcessFrameResponse {
-      +string status
-      +int frame_index
-      +string timestamp
-      +float processing_time_ms
-      +string magnified_frame
-      +string roi_frame
-      +object anomaly_detection
-      +object ml_detection
-      +object features
-      +object motion_signal
-      +object evm_meta
-    }
+Responsibility:
+- Decode uploaded video.
+- Extract ordered frames with timestamp metadata.
 
-    class AnomalyDetection {
-      +string status
-      +float anomaly_index
-      +bool is_normal
-    }
+Input:
+- User-uploaded video file.
 
-    class FeaturePayload {
-      +float dominant_frequency
-      +float rms
-      +float variance
-      +float peak_to_peak
-      +float spectral_entropy
-      +array spectrum_points
-      +float energy_ratio_low
-      +float energy_ratio_mid
-      +float energy_ratio_high
-    }
+Output:
+- Frame stream `F(t)` with frame index and time.
 
-    ProcessFrameResponse --> AnomalyDetection
-    ProcessFrameResponse --> FeaturePayload
+### 3.2 Detection and Tracking
+
+Responsibility:
+- Detect ball and relevant entities using YOLOv8.
+- Track detected objects across frames to produce stable trajectories.
+
+Input:
+- Frame stream `F(t)`.
+
+Output:
+- Tracklets with IDs and frame-wise coordinates.
+
+### 3.3 Feature Extraction
+
+Responsibility:
+- Compute event-level first-touch descriptors from trajectories.
+
+Feature definitions:
+- `speed_ratio`: pre-touch vs post-touch speed relation.
+- `control_distance`: post-touch ball control proximity.
+- `direction_change`: directional deviation caused by touch.
+- `pressure_factor`: contextual pressure around the touch event.
+
+Output:
+- Feature vector `X = [speed_ratio, control_distance, direction_change, pressure_factor]`.
+
+### 3.4 Machine Learning
+
+Responsibility:
+- Use Random Forest to classify touch quality from engineered features.
+
+Input:
+- Feature vector `X`.
+
+Output:
+- Class label and confidence distribution.
+
+Class labels:
+- `Good touch`
+- `Poor touch`
+- `Pressure touch`
+
+### 3.5 Output Layer
+
+Responsibility:
+- Convert model outputs into user-facing decision and score.
+
+Outputs:
+- `touch_classification`
+- `score_generation` (normalized quality score)
+
+### 3.6 Streamlit Web Interface
+
+Responsibility:
+- Provide user workflow from upload to visualization.
+
+User actions:
+- Upload video.
+- View results with class, score, and feature explanation.
+
+## 4. Data Contracts
+
+### 4.1 Detection Record
+
+```json
+{
+  "frame_id": 128,
+  "timestamp_sec": 4.267,
+  "object": "ball",
+  "bbox": [x1, y1, x2, y2],
+  "confidence": 0.94,
+  "track_id": 7
+}
 ```
 
-Explanation:
-- The frontend depends on this payload for charts, metric cards, and status badges.
-- `spectrum_points` powers FFT visualization.
-- `anomaly_detection` and timing fields drive operational decisions.
+### 4.2 Feature Vector Record
+
+```json
+{
+  "video_id": "clip_001",
+  "touch_id": 12,
+  "speed_ratio": 0.81,
+  "control_distance": 0.44,
+  "direction_change": 26.7,
+  "pressure_factor": 0.69
+}
+```
+
+### 4.3 Inference Output Record
+
+```json
+{
+  "touch_classification": "Good touch",
+  "score": 0.91,
+  "class_probabilities": {
+    "Good touch": 0.91,
+    "Poor touch": 0.06,
+    "Pressure touch": 0.03
+  }
+}
+```
+
+## 5. Training and Inference Flow
+
+### 5.1 Offline Training
+
+1. Prepare labeled first-touch dataset.
+2. Run detection and tracking to build trajectories.
+3. Generate feature vectors.
+4. Train Random Forest classifier.
+5. Save model artifact and feature schema.
+
+### 5.2 Online Inference
+
+1. User uploads video in Streamlit.
+2. System runs frame extraction and tracking pipeline.
+3. System computes features.
+4. Classifier predicts touch class and score.
+5. UI shows result panels and charts.
+
+## 6. Evaluation Metrics
+
+- Classification accuracy
+- Macro F1 score
+- Per-class precision/recall
+- Confusion matrix
+- Feature importance ranking (Random Forest)
+
+## 7. Engineering Notes
+
+- Keep class labels balanced during training.
+- Validate tracker stability before feature extraction.
+- Freeze feature schema and order for reproducible inference.
+- Version model files with metadata (`model_version`, `feature_version`, `date`).
+
+## 8. Scope Statement
+
+This architecture document is the source of truth for the football first-touch pipeline shown in the project diagram and should stay synchronized with future implementation updates.
