@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "normal_samples": 80,
+    "abnormal_samples": 80,
+    "test_size": 0.3,
+    "feature_names": [
+      "rms",
+      "variance",
+      "dominant_frequency",
+      "spectral_entropy",
+      "peak_to_peak"
+    ]
+  },
+  "results": [
+    {
+      "model": "Rule-Based",
+      "accuracy": 0.875,
+      "precision_abnormal": 1.0,
+      "recall_abnormal": 0.75,
+      "f1_abnormal": 0.8571428571428571,
+      "false_alarm_rate": 0.0,
+      "miss_rate": 0.25,
+      "avg_inference_ms_per_sample": 0.0027708332102823383
+    },
+    {
+      "model": "One-Class SVM",
+      "accuracy": 0.7708333333333334,
+      "precision_abnormal": 0.6857142857142857,
+      "recall_abnormal": 1.0,
+      "f1_abnormal": 0.8135593220338984,
+      "false_alarm_rate": 0.4583333333333333,
+      "miss_rate": 0.0,
+      "avg_inference_ms_per_sample": 0.01745208343587971
+    },
+    {
+      "model": "Isolation Forest",
+      "accuracy": 0.625,
+      "precision_abnormal": 0.6,
+      "recall_abnormal": 0.75,
+      "f1_abnormal": 0.6666666666666666,
+      "false_alarm_rate": 0.5,
+      "miss_rate": 0.25,
+      "avg_inference_ms_per_sample": 0.46684583321621176
+    }
+  ]
+}
